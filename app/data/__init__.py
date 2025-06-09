@@ -1,0 +1,1 @@
+# Thư mục chứa dữ liệu cấu hình của ứng dụng 
