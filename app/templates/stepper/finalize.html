@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% set step = 4 %}
+{% set title = "Báo cáo, ghi chú" %}
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Hoàn thiện hồ sơ</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="/finalize">
+                        <div class="mb-3">
+                            <label for="template" class="form-label">Chọn mẫu</label>
+                            <select class="form-select" id="template" name="template" onchange="updateEditorContent()">
+                                <option value="CT04" {% if selected_template == 'CT04' %}selected{% endif %}>Mẫu CT04 - Phiếu tiếp nhận hồ sơ</option>
+                                <option value="CT05" {% if selected_template == 'CT05' %}selected{% endif %}>Mẫu CT05 - Thông báo thiếu hồ sơ</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editor" class="form-label">Nội dung</label>
+                            <textarea id="editor" name="content"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="ngay_bao_cao" class="form-label">Ngày báo cáo</label>
+                            <input type="date" class="form-control" id="ngay_bao_cao" name="ngay_bao_cao" value="{{ ngay_bao_cao }}">
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <a href="/verify" class="btn btn-secondary">Quay lại</a>
+                            <button type="submit" class="btn btn-primary">Hoàn thành</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- CKEditor -->
+<script src="https://cdn.ckeditor.com/ckeditor5/40.0.0/classic/ckeditor.js"></script>
+
+<script>
+let editor;
+
+// Định nghĩa templates từ server
+const ct04Template = `{{ ct04_blank|safe }}`;
+const ct05Template = `{{ ct05_blank|safe }}`;
+const llmContent = `{{ llm_content|safe if llm_content else '' }}`;
+
+ClassicEditor
+    .create(document.querySelector('#editor'), {
+        toolbar: ['heading', '|', 'bold', 'italic', 'link', 'bulletedList', 'numberedList', '|', 'outdent', 'indent', '|', 'blockQuote', 'insertTable', 'undo', 'redo'],
+        table: {
+            contentToolbar: ['tableColumn', 'tableRow', 'mergeTableCells']
+        }
+    })
+    .then(newEditor => {
+        editor = newEditor;
+        // Set initial content
+        const selectedTemplate = '{{ selected_template }}';
+        const initialContent = llmContent || (selectedTemplate === 'CT04' ? ct04Template : ct05Template);
+        editor.setData(initialContent);
+    })
+    .catch(error => {
+        console.error(error);
+    });
+
+function updateEditorContent() {
+    const templateType = document.getElementById('template').value;
+    const content = templateType === 'CT04' ? ct04Template : ct05Template;
+    editor.setData(content);
+}
+
+document.querySelector('form').addEventListener('submit', function(e) {
+    const content = editor.getData();
+    document.querySelector('#editor').value = content;
+});
+</script>
+{% endblock %}

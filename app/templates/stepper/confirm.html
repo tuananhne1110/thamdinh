@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% set step = 3 %}
+{% block content %}
+<div class="card shadow">
+    <div class="card-header bg-primary text-white">
+        <h4 class="mb-0">Xác nhận thông tin</h4>
+    </div>
+    <div class="card-body">
+        {% if result %}
+            <form method="POST" action="{{ url_for('routes.step_confirm') }}">
+                <input type="hidden" name="filename" value="{{ result.filename }}">
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label"><strong>Loại tài liệu</strong></label>
+                        <input type="text" name="type" class="form-control" value="{{ result.type }}" readonly>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label"><strong>Phân loại</strong></label>
+                        <input type="text" name="document_class" class="form-control" value="{{ result.document_class }}" readonly>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label"><strong>Nội dung văn bản</strong></label>
+                    <textarea name="text" class="form-control" rows="5" readonly>{{ result.text }}</textarea>
+                </div>
+
+                {% if result.fields %}
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Thông tin trích xuất</strong></label>
+                        {% for key, value in result.fields.items() %}
+                            <div class="input-group mb-2">
+                                <span class="input-group-text">{{ key }}</span>
+                                <input type="text" name="fields[{{ key }}]" class="form-control" value="{{ value }}">
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+
+                <div class="text-center">
+                    <button type="submit" class="btn btn-success btn-lg">
+                        <i class="bi bi-check-circle"></i> Xác nhận và tiếp tục
+                    </button>
+                </div>
+            </form>
+        {% else %}
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-circle-fill"></i> Không có thông tin để xác nhận.
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

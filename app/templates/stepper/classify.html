@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% set step = 4 %}
+{% block content %}
+<div class="card shadow">
+    <div class="card-header bg-primary text-white">
+        <h4 class="mb-0">Phân loại tài liệu</h4>
+    </div>
+    <div class="card-body">
+        {% if result %}
+            <div class="alert alert-info mb-4">
+                <h5 class="alert-heading">Kết quả phân loại</h5>
+                <p class="mb-0">Tài liệu <strong>{{ result.filename }}</strong> đã được phân loại là: <strong>{{ result.classified_type }}</strong></p>
+            </div>
+
+            <form method="POST" action="{{ url_for('routes.step_classify') }}" class="text-center">
+                <input type="hidden" name="filename" value="{{ result.filename }}">
+                <input type="hidden" name="classified_type" value="{{ result.classified_type }}">
+                <button type="submit" class="btn btn-success btn-lg">
+                    <i class="bi bi-check-circle"></i> Xác nhận và hoàn tất
+                </button>
+            </form>
+        {% else %}
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-circle-fill"></i> Không có tài liệu nào để phân loại.
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% set step = 2 %}
+{% block content %}
+<div class="card shadow">
+    <div class="card-header bg-primary text-white">
+        <h4 class="mb-0">Kiểm tra nội dung</h4>
+    </div>
+    <div class="card-body">
+        {% if results %}
+            {% for result in results %}
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">{{ result.filename }}</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if result.error %}
+                            <div class="alert alert-danger">
+                                <i class="bi bi-exclamation-triangle-fill"></i> {{ result.error }}
+                            </div>
+                        {% else %}
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <p><strong>Loại tài liệu:</strong> {{ result.type }}</p>
+                                </div>
+                                <div class="col-md-6">
+                                    <p><strong>Phân loại:</strong> {{ result.document_class }}</p>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label"><strong>Nội dung trích xuất:</strong></label>
+                                <pre class="form-control" style="white-space: pre-wrap; max-height: 300px; overflow-y: auto;">{{ result.text }}</pre>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endfor %}
+
+            <form method="post" action="{{ url_for('routes.step_review') }}" class="text-center">
+                <button class="btn btn-success btn-lg">
+                    <i class="bi bi-check-circle"></i> Xác nhận và tiếp tục
+                </button>
+            </form>
+        {% else %}
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-circle-fill"></i> Không có tài liệu nào để kiểm tra.
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

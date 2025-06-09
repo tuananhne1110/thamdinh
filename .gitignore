@@ -16,8 +16,6 @@ images/
 *.csv
 *.json
 *.xml
-*.html
-*.css
-*.js
+
 uploads/
 .pt

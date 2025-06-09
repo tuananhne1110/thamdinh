@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+{% set step = 1 %}
+{% set title = "Thông tin hồ sơ" %}
+{% block content %}
+
+<div class="section-header">
+    <i class="bi bi-folder"></i> Thông tin hồ sơ
+</div>
+
+<form method="POST" enctype="multipart/form-data">
+    <!-- Chọn loại thủ tục và đối tượng -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <label for="procedure" class="form-label">Chọn loại thủ tục <span class="text-danger">*</span></label>
+            <select id="procedure" name="procedure" class="form-select" required>
+                <option value="">-- Chọn loại thủ tục --</option>
+                {% for p in procedures %}
+                <option value="{{ p.id }}">{{ p.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-6">
+            <label for="case" class="form-label">Chọn đối tượng/trường hợp <span class="text-danger">*</span></label>
+            <select id="case" name="case" class="form-select" required disabled>
+                <option value="">-- Chọn đối tượng/trường hợp --</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Danh sách giấy tờ yêu cầu -->
+    <div id="required-documents-section" class="mb-4" style="display:none;">
+        <div class="card border">
+            <div class="card-header bg-light py-2">
+                <strong>Danh sách giấy tờ yêu cầu</strong>
+            </div>
+            <div class="card-body p-2">
+                <ul id="required-documents-list" class="mb-0"></ul>
+            </div>
+        </div>
+    </div>
+
+    <table class="info-table">
+        <thead>
+            <tr>
+                <th style="width: 15%;">Loại tài liệu</th>
+                <th style="width: 25%;">Tên tài liệu</th>
+                <th style="width: 15%;">Ngày tiếp nhận</th>
+                <th style="width: 20%;">Đơn vị tiếp nhận</th>
+                <th style="width: 10%;">Tải xuống</th>
+                <th style="width: 15%;">Xóa</th>
+            </tr>
+        </thead>
+        <tbody id="document-list">
+            <!-- Danh sách tài liệu sẽ được thêm vào đây sau khi upload -->
+            <tr id="empty-state">
+                <td colspan="6" class="text-center text-muted py-4">
+                    <!-- <i class="bi bi-file-earmark-plus fs-4 mb-2"></i> -->
+                    <!-- <div>Chưa có tài liệu nào được tải lên</div>
+                    <small>Vui lòng chọn tệp và tải lên để hiển thị danh sách</small> -->
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="upload-section">
+        <div class="upload-left">
+            <div class="section-title">ĐÍNH KÈM BIỂU MẪU</div>
+            <div class="process-content">
+                <div class="form-group">
+                    <label for="form_files">Tệp biểu mẫu:</label>
+                    <input type="file" name="form_files" id="form_files" multiple 
+                           accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" style="display: none;">
+                    
+                    <button type="button" class="btn btn-primary" onclick="document.getElementById('form_files').click()">
+                        <i class="bi bi-paperclip"></i> Đính kèm biểu mẫu
+                    </button>
+                </div>
+                
+
+                <div style="margin-top: 15px; font-size: 13px; color: #666;">
+                    <strong>Administrator System</strong> • Lúc {{ current_time }}<br>
+                    <strong>[Trạng thái]</strong> Tiếp nhận hồ sơ
+                </div>
+            </div>
+        </div>
+
+        <div class="upload-right">
+            <div class="section-title">ĐÍNH KÈM VĂN BẢN LIÊN QUAN</div>
+            <div class="process-content">
+                <div class="form-group">
+                    <label for="related_files">Tệp văn bản liên quan:</label>
+                    <input type="file" name="related_files" id="related_files" multiple 
+                           accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" style="display: none;">
+                    
+                    <button type="button" class="btn btn-primary" onclick="document.getElementById('related_files').click()">
+                        <i class="bi bi-paperclip"></i> Đính kèm văn bản
+                    </button>
+                </div>                
+            </div>
+        </div>
+    </div>
+
+    <div class="assignment-section">
+        <div class="section-title">Đã giao xử lý</div>
+        <table class="assignment-table">
+            <thead>
+                <tr>
+                    <th>Cán bộ</th>
+                    <th>Hạn xử lý</th>
+                    <th>Vai trò</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Administrator System</td>
+                    <td></td>
+                    <td>Xử lý chính</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="btn-group-actions">
+        <!-- <button type="button" class="btn btn-success">Hoàn thành</button> -->
+        <button type="button" class="btn btn-primary">Lưu</button>
+        <button type="submit" class="btn btn-warning">Tiếp tục</button>
+        <a href="/" class="btn btn-secondary">Quay Lại</a>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-danger mt-4">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i> {{ error }}
+    </div>
+    {% endif %}
+</form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const formFilesInput = document.getElementById('form_files');
+    const relatedFilesInput = document.getElementById('related_files');
+    const documentList = document.getElementById('document-list');
+    const emptyState = document.getElementById('empty-state');
+    const procedureSelect = document.getElementById('procedure');
+    const caseSelect = document.getElementById('case');
+    const requiredSection = document.getElementById('required-documents-section');
+    const requiredList = document.getElementById('required-documents-list');
+    
+    // Xử lý khi chọn file
+    [formFilesInput, relatedFilesInput].forEach(input => {
+        input.addEventListener('change', function(e) {
+            const files = e.target.files;
+            if (files.length > 0) {
+                emptyState.style.display = 'none';
+                Array.from(files).forEach(file => {
+                    addFileToTable(file);
+                });
+            }
+        });
+    });
+    
+    function addFileToTable(file) {
+        const row = document.createElement('tr');
+        const fileType = getFileType(file.name);
+        const today = new Date().toISOString().split('T')[0];
+        
+        row.innerHTML = `
+            <td>${fileType}</td>
+            <td>
+                <div class="d-flex align-items-center">
+                    <i class="bi ${getFileIcon(file.name)} me-2"></i>
+                    ${file.name}
+                </div>
+            </td>
+            <td>
+                <input type="date" class="form-control" value="${today}" style="border: none; background: transparent;">
+            </td>
+            <td>
+                <select class="form-select" style="border: none; background: transparent;">
+                    <option>– Công An Xã</option>
+                </select>
+            </td>
+            <td class="text-center">
+                <button type="button" class="btn btn-link p-0">
+                    <i class="bi bi-download"></i>
+                </button>
+            </td>
+            <td class="text-center">
+                <button type="button" class="btn btn-link p-0 text-danger" onclick="removeFile(this)">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        `;
+        documentList.appendChild(row);
+    }
+    
+    function getFileType(filename) {
+        const ext = filename.split('.').pop().toLowerCase();
+        switch(ext) {
+            case 'pdf': return 'Tài liệu PDF';
+            case 'doc':
+            case 'docx': return 'Tờ trình';
+            case 'jpg':
+            case 'jpeg':
+            case 'png': return 'Hình ảnh';
+            default: return 'Tài liệu';
+        }
+    }
+    
+    function getFileIcon(filename) {
+        const ext = filename.split('.').pop().toLowerCase();
+        switch(ext) {
+            case 'pdf': return 'bi-file-earmark-pdf text-danger';
+            case 'doc':
+            case 'docx': return 'bi-file-earmark-word text-primary';
+            case 'jpg':
+            case 'jpeg':
+            case 'png': return 'bi-file-earmark-image text-success';
+            default: return 'bi-file-earmark text-secondary';
+        }
+    }
+    
+    // Form validation
+    const form = document.querySelector('form');
+    form.addEventListener('submit', function(e) {
+        let hasFiles = false;
+        if (formFilesInput && formFilesInput.files.length > 0) hasFiles = true;
+        if (relatedFilesInput && relatedFilesInput.files.length > 0) hasFiles = true;
+        if (!hasFiles) {
+            e.preventDefault();
+            alert('Vui lòng chọn ít nhất một tệp để tải lên.');
+        }
+    });
+
+    procedureSelect.addEventListener('change', function() {
+        const procedureId = this.value;
+        caseSelect.innerHTML = '<option value="">-- Chọn đối tượng/trường hợp --</option>';
+        caseSelect.disabled = true;
+        requiredSection.style.display = 'none';
+        requiredList.innerHTML = '';
+        if (procedureId) {
+            fetch(`/api/cases/${procedureId}`)
+                .then(res => res.json())
+                .then(data => {
+                    data.forEach(c => {
+                        const opt = document.createElement('option');
+                        opt.value = c.id;
+                        opt.textContent = c.name;
+                        caseSelect.appendChild(opt);
+                    });
+                    caseSelect.disabled = false;
+                });
+        }
+    });
+
+    caseSelect.addEventListener('change', function() {
+        const procedureId = procedureSelect.value;
+        const caseId = this.value;
+        requiredSection.style.display = 'none';
+        requiredList.innerHTML = '';
+        if (procedureId && caseId) {
+            fetch(`/api/required_documents?procedure=${procedureId}&case=${caseId}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.length > 0) {
+                        data.forEach(doc => {
+                            const li = document.createElement('li');
+                            li.innerHTML = `${doc.name} ${doc.required ? '<span class=\'text-danger\'>*</span>' : ''} ` +
+                                (doc.quantity ? `(<span class='text-muted'>${doc.quantity.original} bản chính, ${doc.quantity.copy} bản sao</span>)` : '');
+                            requiredList.appendChild(li);
+                        });
+                        requiredSection.style.display = 'block';
+                    }
+                });
+        }
+    });
+});
+
+function removeFile(button) {
+    const row = button.closest('tr');
+    row.remove();
+    // Kiểm tra nếu không còn file nào thì hiển thị lại empty state
+    const documentList = document.getElementById('document-list');
+    const emptyState = document.getElementById('empty-state');
+    if (documentList.children.length === 1) { // Chỉ còn empty state
+        emptyState.style.display = 'table-row';
+    }
+}
+</script>
+
+{% endblock %}
