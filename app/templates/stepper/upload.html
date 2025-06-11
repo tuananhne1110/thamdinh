@@ -48,6 +48,7 @@
                 <th style="width: 20%;">Đơn vị tiếp nhận</th>
                 <th style="width: 10%;">Tải xuống</th>
                 <th style="width: 15%;">Xóa</th>
+                <th style="width: 10%;">Xem trước</th>
             </tr>
         </thead>
         <tbody id="document-list">
@@ -162,6 +163,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const row = document.createElement('tr');
         const fileType = getFileType(file.name);
         const today = new Date().toISOString().split('T')[0];
+        const isImage = /\.(jpg|jpeg|png)$/i.test(file.name);
         
         row.innerHTML = `
             <td>${fileType}</td>
@@ -188,6 +190,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 <button type="button" class="btn btn-link p-0 text-danger" onclick="removeFile(this)">
                     <i class="bi bi-trash"></i>
                 </button>
+            </td>
+            <td class="text-center">
+                ${isImage ? `
+                    <button type="button" class="btn btn-link p-0" onclick="showImagePreview(this, '${URL.createObjectURL(file)}')">
+                        <i class="bi bi-eye"></i>
+                    </button>
+                ` : ''}
             </td>
         `;
         documentList.appendChild(row);
@@ -277,6 +286,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function removeFile(button) {
     const row = button.closest('tr');
+    // Xóa URL object nếu có
+    const previewButton = row.querySelector('.btn-link[onclick^="showImagePreview"]');
+    if (previewButton) {
+        const url = previewButton.getAttribute('onclick').match(/'([^']+)'/)[1];
+        URL.revokeObjectURL(url);
+    }
     row.remove();
     // Kiểm tra nếu không còn file nào thì hiển thị lại empty state
     const documentList = document.getElementById('document-list');
@@ -284,6 +299,38 @@ function removeFile(button) {
     if (documentList.children.length === 1) { // Chỉ còn empty state
         emptyState.style.display = 'table-row';
     }
+}
+
+// Thêm hàm mới để hiển thị preview ảnh
+function showImagePreview(button, imageUrl) {
+    // Tạo modal nếu chưa tồn tại
+    let modal = document.getElementById('imagePreviewModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'imagePreviewModal';
+        modal.className = 'modal fade';
+        modal.setAttribute('tabindex', '-1');
+        modal.innerHTML = `
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Xem trước ảnh</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body text-center">
+                        <img src="" class="img-fluid" style="max-height: 80vh;">
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    // Cập nhật ảnh và hiển thị modal
+    const img = modal.querySelector('img');
+    img.src = imageUrl;
+    const bsModal = new bootstrap.Modal(modal);
+    bsModal.show();
 }
 </script>
 

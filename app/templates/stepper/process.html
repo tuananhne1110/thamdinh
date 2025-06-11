@@ -133,33 +133,45 @@
                                             <i class="bi bi-x"></i> Hủy
                                         </button>
                                     </div>
-                                    <div class="table-responsive">
-                                        <table class="table mb-0">
-                                            <thead class="table-light">
-                                                <tr>
-                                                    <th class="border-0">Trường thông tin</th>
-                                                    <th class="border-0" style="width: 60%;">Giá trị</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {% if result.fields %}
-                                                    {% for field_name, field_value in result.fields.items() %}
+                                    <div class="row">
+                                        {% if result.type in ['jpg', 'jpeg', 'png'] %}
+                                        <div class="col-md-4 text-center mb-3">
+                                            <img src="/uploads/{{ result.filename }}" alt="preview" style="max-width: 100%; max-height: 1000px; border: 2px solid #eee; border-radius: 4px;">
+                                            <!-- <div class="text-muted small mt-1">Ảnh gốc</div> -->
+                                        </div>
+                                        <div class="col-md-8">
+                                        {% else %}
+                                        <div class="col-12">
+                                        {% endif %}
+                                            <div class="table-responsive">
+                                                <table class="table mb-0">
+                                                    <thead class="table-light">
                                                         <tr>
-                                                            <td class="border-0">{{ field_name }}</td>
-                                                            <td class="border-0">
-                                                                <input type="text" class="form-control field-input-{{ idx }}" name="fields[{{ result.filename }}][{{ field_name }}]" value="{{ field_value }}" readonly style="min-width: 350px;">
-                                                            </td>
+                                                            <th class="border-0">Trường thông tin</th>
+                                                            <th class="border-0" style="width: 60%;">Giá trị</th>
                                                         </tr>
-                                                    {% endfor %}
-                                                {% else %}
-                                                    <tr>
-                                                        <td colspan="2" class="border-0 text-center text-muted py-4">
-                                                            Không tìm thấy thông tin cần trích xuất
-                                                        </td>
-                                                    </tr>
-                                                {% endif %}
-                                            </tbody>
-                                        </table>
+                                                    </thead>
+                                                    <tbody>
+                                                        {% if result.fields %}
+                                                            {% for field_name, field_value in result.fields.items() %}
+                                                                <tr>
+                                                                    <td class="border-0">{{ field_name }}</td>
+                                                                    <td class="border-0">
+                                                                        <input type="text" class="form-control field-input-{{ idx }}" name="fields[{{ result.filename }}][{{ field_name }}]" value="{{ field_value }}" readonly style="min-width: 350px;">
+                                                                    </td>
+                                                                </tr>
+                                                            {% endfor %}
+                                                        {% else %}
+                                                            <tr>
+                                                                <td colspan="2" class="border-0 text-center text-muted py-4">
+                                                                    Không tìm thấy thông tin cần trích xuất
+                                                                </td>
+                                                            </tr>
+                                                        {% endif %}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
                                     </div>
                                 {% endif %}
                             </div>

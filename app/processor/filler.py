@@ -10,7 +10,7 @@ class LLMFiller:
         api_url: str = "https://llm.chutes.ai/v1/chat/completions",
         api_key: str = "Bearer cpk_85bdb580dbdf490a826b8cdf8f8988c7.9491854e5d615e06accecfd40a6cc7c0.ThSobUhbvPO57kvhdknw0zpWoazQQ4Oe",
         max_workers: int = 5,
-        max_tokens: int = 999
+        max_tokens: int = 2000
     ):
         self.model_name = model_name
         self.api_url = api_url
@@ -68,7 +68,10 @@ class LLMFiller:
                 "family_members": [],
                 "thanh_phan_ho_so": extracted_data.get("thanh_phan_ho_so", []),
                 "invalid_fields": extracted_data.get("invalid_fields", []),
-                "giay_to_thieu": extracted_data.get("giay_to_thieu", [])
+                "giay_to_thieu": extracted_data.get("giay_to_thieu", []),
+                "ngay_lap_phieu": extracted_data.get("ngay_lap_phieu", ""),
+                "Ngày lập phiếu": extracted_data.get("Ngày lập phiếu", ""),
+                "ma_ho_so": extracted_data.get("ma_ho_so", "")
             }
 
             # Process family members if available
@@ -90,7 +93,10 @@ class LLMFiller:
                 prompt_generator = Form_CT04_Prompt_Generator()
 
             # Generate prompt text
-            prompt_text = prompt_generator(json.dumps(prompt_data, ensure_ascii=False))
+            if form_type == 'CT05' or form_type == 'CT04':
+                prompt_text = prompt_generator(json.dumps(prompt_data, ensure_ascii=False), ma_ho_so=prompt_data.get('ma_ho_so', ''))
+            else:
+                prompt_text = prompt_generator(json.dumps(prompt_data, ensure_ascii=False))
             # Call LLM API
             response = self._call_llm_api(prompt_text)
             if not response or response == "Lỗi khi gọi LLM API.":

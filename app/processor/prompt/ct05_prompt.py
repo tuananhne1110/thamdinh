@@ -25,7 +25,7 @@ class Form_CT05_Prompt_Generator:
 </tbody>
 </table>
 <p><strong><strong>PHIẾU H</strong></strong><strong><strong>Ư</strong></strong><strong><strong>ỚNG DẪN BỔ SUNG, HO&Agrave;N THIỆN HỒ S</strong></strong><strong><strong>Ơ</strong></strong><strong><strong>&nbsp;</strong></strong></p>
-<p>M&atilde; hồ sơ:</p>
+<p>Mã hồ sơ: {ma_ho_so}</p>
 <p>Của &Ocirc;ng/B&agrave;:</p>
 <table>
 <tbody>
@@ -82,11 +82,10 @@ class Form_CT05_Prompt_Generator:
 <p>&nbsp;</p>
 </td>
 <td width="51.5200%">
-<p>......<em>., ng&agrave;y</em>...<em>.</em>...<em>. th&aacute;ng.</em>......<em>&nbsp;năm</em>.........<em>.</em></p>
+<p>......<em>., ngày</em>...<em>.</em>...<em>. tháng.</em>......<em>&nbsp;năm</em>.........<em>.</em></p>
 <p><strong>C&Aacute;N BỘ TIẾP NHẬN</strong><strong><sup>(4)</sup></strong></p>
 <p><em><em>&nbsp;</em></em></p>
 <p>&nbsp;</p>
-</td>
 </tr>
 </tbody>
 </table>
@@ -123,17 +122,17 @@ class Form_CT05_Prompt_Generator:
     - Lý do: 
         + Dựa trên nội dung của mục (3) để điền lý do
         + Tham chiếu file thamchieu.docx để đảm bảo lý do phù hợp với quy định
-        + Điền ngắn gọn, rõ ràng lý do cần bổ sung hồ sơ
+        + Điền đầy đủ cách sửa các trường thông tin không hợp lệ theo thamchieu.docx, hướng dẫn chi tiết cần chỉnh sửa như thế nào để hợp lệ 
         + Điền Lý do theo các trường thông tin không hợp lệ hoặc thiếu từ các bước xử lý trước
     - Số điện thoại liên hệ: "Số điện thoại"
-    - Ngày lập phiếu: Sử dụng ngày hiện tại theo định dạng DD/MM/YYYY
+    - trường "..., ngày... tháng... năm....." sử dụng tên thành phố trong "cơ quan đăng ký cư trú", và sử dụng ngày hiện tại theo định dạng DD/MM/YYYY để điền vào trường ngày... tháng... năm....
+    - Điền đầy đủ ngày hiện tại vào trường "..., ngày... tháng... năm....." ở trên CÁN BỘ TIẾP NHẬN(4)
 
 2. Quy tắc xử lý:
     - Nếu thiếu thông tin cho bất kỳ trường nào, sử dụng "..." làm ký tự thay thế
     - Chỉ trả về HTML, KHÔNG giải thích, KHÔNG bọc trong markdown hay code block.
     - Giữ nguyên cấu trúc của biểu mẫu CT05, bao gồm tiêu đề, bảng và khoảng cách
     - Đảm bảo định dạng ngày theo DD/MM/YYYY
-    - Không bao gồm phần "Chú thích" trong đầu ra trừ khi được yêu cầu rõ ràng
 
 3. Xử lý mục (3) và Lý do:
     - Đọc và phân tích file thamchieu.docx để hiểu các yêu cầu cụ thể
@@ -146,8 +145,8 @@ class Form_CT05_Prompt_Generator:
 Cung cấp biểu mẫu CT05 đã điền hoàn chỉnh dưới dạng HTML, khớp chính xác với cấu trúc của biểu mẫu.
 """
 
-    def generate(self, text: str) -> str:
-        return self.template.format(text=text)
+    def generate(self, text: str, ma_ho_so: str = " ") -> str:
+        return self.template.format(text=text, ma_ho_so=ma_ho_so)
 
-    def __call__(self, text: str) -> str:
-        return self.generate(text) 
+    def __call__(self, text: str, ma_ho_so: str = " ") -> str:
+        return self.generate(text, ma_ho_so) 

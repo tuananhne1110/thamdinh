@@ -9,7 +9,6 @@ class Form_CT04_Prompt_Generator:
 Đây là mẫu HTML của biểu mẫu CT04 (bạn phải giữ nguyên cấu trúc, chỉ thay thế các trường thông tin):
 <p>Mẫu CT04&nbsp;ban h&agrave;nh k&egrave;m theo Th&ocirc;ng tư số 66/2023/TT-BCA</p>
 <p>&nbsp;ng&agrave;y 17/11/2023 của Bộ trưởng Bộ C&ocirc;ng an</p>
-<p>&nbsp;</p>
 <table>
 <tbody>
 <tr>
@@ -27,9 +26,8 @@ class Form_CT04_Prompt_Generator:
 </tr>
 </tbody>
 </table>
-<p>&nbsp;</p>
 <p><strong><strong>PHIẾU TIẾP NHẬN HỒ SƠ V&Agrave; HẸN TRẢ KẾT QUẢ</strong></strong></p>
-<p>M&atilde; hồ sơ:......................</p>
+<p>M&atilde; hồ sơ: {ma_ho_so}</p>
 <p>C&ocirc;ng an<sup>(2)</sup>:</p>
 <p>đ&atilde; tiếp nhận hồ sơ của &Ocirc;ng/B&agrave;:</p>
 <table>
@@ -204,16 +202,10 @@ class Form_CT04_Prompt_Generator:
 <p>&nbsp;</p>
 <p>&nbsp;</p>
 <p>&nbsp;</p>
-<p>&nbsp;</p>
-<p>&nbsp;</p>
-<p>&nbsp;</p>
-<p>&nbsp;</p>
 </td>
 </tr>
 </tbody>
 </table>
-<p><strong>&nbsp;</strong></p>
-<p><strong>&nbsp;</strong></p>
 <p><strong>Ch&uacute; th&iacute;ch: </strong></p>
 <p>(1) Cơ&nbsp;quan cấp tr&ecirc;n của cơ&nbsp;quan đăng k&yacute; cư&nbsp;tr&uacute;.</p>
 <p>(2) Cơ&nbsp;quan đăng k&yacute; cư&nbsp;tr&uacute;.</p>
@@ -238,24 +230,26 @@ class Form_CT04_Prompt_Generator:
     - Số điện thoại: "Số điện thoại"
     - Email: "Email"
     - Nội dung yêu cầu giải quyết: "Nội dung đề nghị"
-    - Thành phần hồ sơ nộp: "thanh_phan_ho_so"
-    - Thời gian nhận hồ sơ: Sử dụng giờ hiện tại (10:58) hoặc "..." nếu không xác định được.
-    - Ngày nhận hồ sơ: Sử dụng ngày hiện tại (03/06/2025).
+    - Thành phần hồ sơ nộp: "thanh_phan_ho_so" 
+    - Thời gian nhận hồ sơ: Sử dụng giờ hiện tại hoặc "..." nếu không xác định được.
+    - Ngày nhận hồ sơ: Sử dụng ngày hiện tại.
     - Thời gian trả kết quả: Sử dụng "..." (vì không có trong CT01).
     - Ngày trả kết quả: Sử dụng "..." (vì không có trong CT01).
     - Hình thức nhận kết quả: Mặc định là "Bản giấy" (vì không có thông tin cụ thể trong CT01).
     - Địa điểm nhận kết quả bản giấy: Sử dụng "Tên cơ quan đăng ký cư trú".
+    - trường "..., ngày... tháng... năm....." sử dụng tên thành phố trong "cơ quan đăng ký cư trú", và sử dụng ngày hiện tại theo định dạng DD/MM/YYYY để điền vào trường ngày... tháng... năm....
+    - Điền đầy đủ ngày hiện tại vào trường "..., ngày... tháng... năm....." ở trên CÁN BỘ TIẾP NHẬN(4)
 2. Bỏ qua các trường liên quan đến "Thành viên hộ gia đình" và "Chủ hộ" trong CT01, vì CT04 chỉ cần thông tin của người nộp chính.
 3. Nếu thiếu thông tin cho bất kỳ trường nào, sử dụng "..." làm ký tự thay thế.
 4. Chỉ trả về HTML hoàn chỉnh, KHÔNG bọc trong markdown hay plaintext, giữ nguyên cấu trúc của biểu mẫu Mẫu CT04, bao gồm tiêu đề, bảng và khoảng cách.
 5. Đảm bảo định dạng ngày theo DD/MM/YYYY và giờ theo HH:MM.
-6. Không bao gồm phần "Chú thích" trong đầu ra trừ khi được yêu cầu rõ ràng.
+
 **Đầu ra**:
 Cung cấp biểu mẫu Mẫu CT04 đã điền hoàn chỉnh dưới dạng HTML, khớp chính xác với cấu trúc của biểu mẫu.
 """
 
-    def generate(self, text: str) -> str:
-        return self.template.format(text=text)
+    def generate(self, text: str, ma_ho_so: str = "") -> str:
+        return self.template.format(text=text, ma_ho_so=ma_ho_so)
 
-    def __call__(self, text: str) -> str:
-        return self.generate(text) 
+    def __call__(self, text: str, ma_ho_so: str = "") -> str:
+        return self.generate(text, ma_ho_so) 

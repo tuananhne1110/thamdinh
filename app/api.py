@@ -18,7 +18,7 @@ app = FastAPI(title="Hệ thống Cơ sở dữ liệu thẩm tra, thẩm địn
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
-
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 # Templates
 templates = Jinja2Templates(directory="app/templates")
 
@@ -780,6 +780,9 @@ async def step_finalize_get(request: Request):
         try:
             # Chuẩn bị dữ liệu đầu vào
             missing_docs = get_missing_documents(required_docs, uploaded_files_info)
+            from datetime import datetime
+            today = datetime.now()
+            ngay_lap_phieu = today.strftime('%d/%m/%Y')
             validator_input = {
                 "Tên cơ quan đăng ký cư trú": str(get_field_value(fields, "Cơ quan tiếp nhận")).strip(),
                 "Họ, chữ đệm và tên": str(get_field_value(fields, "Họ, chữ đệm và tên")).strip(),
@@ -795,7 +798,8 @@ async def step_finalize_get(request: Request):
                 "Thành viên thay đổi": [],
                 "thanh_phan_ho_so": [doc['name'] for doc in required_docs] if required_docs else [],
                 "ma_ho_so": ma_ho_so or "",
-                "giay_to_thieu": missing_docs
+                "giay_to_thieu": missing_docs,
+                "ngay_lap_phieu": ngay_lap_phieu
             }
 
             # Thêm thông tin thành viên gia đình nếu có
@@ -876,14 +880,14 @@ async def step_finalize_post(request: Request):
     required_docs = []
     if file_info:
         from app.data.procedures import get_required_documents
-        # Ưu tiên lấy key chuỗi (case/procedure), nếu không có thì lấy case_id/procedure_id
         procedure_key = file_info.get('procedure') or file_info.get('procedure_id') or ''
         case_key = file_info.get('case') or file_info.get('case_id') or ''
         print(f"[DEBUG] Getting required docs for procedure: {procedure_key}, case: {case_key}")
         required_docs = get_required_documents(str(procedure_key), str(case_key))
         print(f"[DEBUG] Required docs: {required_docs}")
 
-    # Kiểm tra trạng thái validation trên validation_result
+    # Luôn khởi tạo lại invalid_fields mới nhất từ validation_result
+    invalid_fields = []
     info_status = 'pass'
     for field_name, field_data in validation_result.items():
         if isinstance(field_data, dict):
@@ -903,106 +907,79 @@ async def step_finalize_post(request: Request):
         elif field_data != 'Đạt':
             info_status = 'fail'
             invalid_fields.append(f"{field_name}: {field_data}")
-
-    # Xác định form type dựa trên kết quả validation và giấy tờ còn thiếu
-    if not get_missing_documents(required_docs, uploaded_files_info) and info_status == 'pass':
-        form_type = 'CT04'
-    else:
-        form_type = template
-
-    # Sau khi validate, in toàn bộ validation_result
-    print("[DEBUG] validation_result:", validation_result)
-    # Luôn khởi tạo lại invalid_fields mới (KHÔNG lấy từ file_info)
-    invalid_fields = []
-    for field_name, field_data in validation_result.items():
-        if isinstance(field_data, dict):
-            status = field_data.get('status', '')
-            if status != 'Đạt':
-                invalid_fields.append(f"{field_name}: {status}")
-        elif isinstance(field_data, list):
-            for item in field_data:
-                if isinstance(item, dict):
-                    for sub_field, sub_data in item.items():
-                        if isinstance(sub_data, dict):
-                            status = sub_data.get('status', '')
-                            if status != 'Đạt':
-                                invalid_fields.append(f"{field_name} - {sub_field}: {status}")
-        elif field_data != 'Đạt':
-            invalid_fields.append(f"{field_name}: {field_data}")
     print("[DEBUG] invalid_fields mới nhất:", invalid_fields)
-    # Cập nhật lại vào file_info nếu cần
     if file_info is not None:
         file_info["invalid_fields"] = invalid_fields
 
+    # Xác định form type dựa trên kết quả validation và giấy tờ còn thiếu
+    missing_docs = get_missing_documents(required_docs, uploaded_files_info)
+    if not missing_docs and info_status == 'pass':
+        form_type = 'CT04'
+    else:
+        form_type = template
+    today = datetime.now()
+    ngay_lap_phieu = today.strftime('%d/%m/%Y')
     # Chuẩn bị dữ liệu đầu vào cho LLM
     if fields:
-        # Chuẩn bị dữ liệu đầu vào
-        missing_docs = get_missing_documents(required_docs, uploaded_files_info)
-        validator_input = {
-            "Tên cơ quan đăng ký cư trú": str(get_field_value(fields, "Cơ quan tiếp nhận")).strip(),
-            "Họ, chữ đệm và tên": str(get_field_value(fields, "Họ, chữ đệm và tên")).strip(),
-            "Ngày, tháng, năm sinh": str(get_field_value(fields, "Ngày tháng năm sinh")).strip(),
-            "Giới tính": str(get_field_value(fields, "Giới tính")).lower().strip(),
-            "Số định danh cá nhân": str(get_field_value(fields, "Số định danh cá nhân") or get_field_value(fields, "Số định danh cá nhân/CMND")).strip(),
-            "Số điện thoại": str(get_field_value(fields, "Số điện thoại")).strip(),
-            "Email": str(get_field_value(fields, "Email")).strip(),
-            "Họ, chữ đệm và tên chủ hộ": str(get_field_value(fields, "Họ và tên chủ hộ")).strip(),
-            "Quan hệ với chủ hộ": str(get_field_value(fields, "Mối quan hệ với chủ hộ")).lower().strip(),
-            "Số định danh cá nhân của chủ hộ": str(get_field_value(fields, "Số định danh cá nhân của chủ hộ")).strip(),
-            "Nội dung đề nghị": str(get_field_value(fields, "Nội dung đề nghị")).strip(),
-            "Thành viên thay đổi": [],
-            "thanh_phan_ho_so": [doc['name'] for doc in required_docs] if required_docs else [],
-            "ma_ho_so": ma_ho_so or "",
-            "giay_to_thieu": missing_docs
-        }
-
-        # Thêm thông tin thành viên gia đình nếu có
-        for i in range(1, 10):
-            prefix = f"Thành viên {i}"
-            if f"{prefix} - Họ và tên" in fields:
-                member = {
-                    "Họ, chữ đệm và tên": fields.get(f"{prefix} - Họ và tên", ""),
-                    "Ngày sinh": fields.get(f"{prefix} - Ngày sinh", ""),
-                    "Giới tính": fields.get(f"{prefix} - Giới tính", "").lower().strip(),
-                    "Số định danh cá nhân": str(fields.get(f"{prefix} - Số định danh cá nhân", "")).strip(),
-                    "Quan hệ với chủ hộ": fields.get(f"{prefix} - Mối quan hệ với chủ hộ", "").lower().strip()
-                }
-                validator_input["Thành viên thay đổi"].append(member)
-
-        # Xác định form type và thêm invalid_fields nếu cần
-        form_type = form_type
-        if form_type == "CT05" and info_status == 'fail':
-            validator_input["invalid_fields"] = invalid_fields
-
-        # Khi truyền vào LLM, chỉ lấy invalid_fields mới nhất
-        if form_type == 'CT05' and invalid_fields:
-            validator_input["invalid_fields"] = invalid_fields
-        else:
-            validator_input.pop("invalid_fields", None)
-        print("[DEBUG] validator_input truyền vào LLM:", validator_input)
-
-        from app.processor.filler import LLMFiller
-        llm_content = LLMFiller()(validator_input, form_type=form_type)
+        try:
+            validator_input = {
+                "Tên cơ quan đăng ký cư trú": str(get_field_value(fields, "Cơ quan tiếp nhận")).strip(),
+                "Họ, chữ đệm và tên": str(get_field_value(fields, "Họ, chữ đệm và tên")).strip(),
+                "Ngày, tháng, năm sinh": str(get_field_value(fields, "Ngày tháng năm sinh")).strip(),
+                "Giới tính": str(get_field_value(fields, "Giới tính")).lower().strip(),
+                "Số định danh cá nhân": str(get_field_value(fields, "Số định danh cá nhân") or get_field_value(fields, "Số định danh cá nhân/CMND")).strip(),
+                "Số điện thoại": str(get_field_value(fields, "Số điện thoại")).strip(),
+                "Email": str(get_field_value(fields, "Email")).strip(),
+                "Họ, chữ đệm và tên chủ hộ": str(get_field_value(fields, "Họ và tên chủ hộ")).strip(),
+                "Quan hệ với chủ hộ": str(get_field_value(fields, "Mối quan hệ với chủ hộ")).lower().strip(),
+                "Số định danh cá nhân của chủ hộ": str(get_field_value(fields, "Số định danh cá nhân của chủ hộ")).strip(),
+                "Nội dung đề nghị": str(get_field_value(fields, "Nội dung đề nghị")).strip(),
+                "Thành viên thay đổi": [],
+                "thanh_phan_ho_so": [doc['name'] for doc in required_docs] if required_docs else [],
+                "ma_ho_so": ma_ho_so or "",
+                "giay_to_thieu": missing_docs,
+                "ngay_lap_phieu": ngay_lap_phieu
+            }
+            for i in range(1, 10):
+                prefix = f"Thành viên {i}"
+                if f"{prefix} - Họ và tên" in fields:
+                    member = {
+                        "Họ, chữ đệm và tên": fields.get(f"{prefix} - Họ và tên", ""),
+                        "Ngày sinh": fields.get(f"{prefix} - Ngày sinh", ""),
+                        "Giới tính": fields.get(f"{prefix} - Giới tính", "").lower().strip(),
+                        "Số định danh cá nhân": str(fields.get(f"{prefix} - Số định danh cá nhân", "")).strip(),
+                        "Quan hệ với chủ hộ": fields.get(f"{prefix} - Mối quan hệ với chủ hộ", "").lower().strip()
+                    }
+                    validator_input["Thành viên thay đổi"].append(member)
+            if form_type == "CT05" and invalid_fields:
+                validator_input["invalid_fields"] = invalid_fields
+            else:
+                validator_input.pop("invalid_fields", None)
+            print("[DEBUG] validator_input truyền vào LLM:", validator_input)
+            from app.processor.filler import LLMFiller
+            llm_content = LLMFiller()(validator_input, form_type=form_type)
+        except Exception as e:
+            print(f"Error filling form: {str(e)}")
+            llm_content = "Lỗi khi điền form tự động"
     else:
-        # Render nội dung từ file mẫu HTML nếu không có fields
-        template_file = f"app/templates/snippets/ct04.html" if template == "CT04" else f"app/templates/snippets/ct05.html"
+        template_file = f"app/templates/snippets/ct04.html" if form_type == "CT04" else f"app/templates/snippets/ct05.html"
+        llm_content = ""
         if os.path.exists(template_file):
             with open(template_file, 'r', encoding='utf-8') as f:
                 raw_html = f.read()
-                from jinja2 import Template as JinjaTemplate
                 jinja_template = JinjaTemplate(raw_html)
                 context = {**fields, "case_id": case_id_current}
+                if form_type == 'CT05':
+                    context["invalid_fields"] = invalid_fields
                 llm_content = jinja_template.render(**context)
         else:
             llm_content = f"Không tìm thấy file mẫu {template_file}!"
 
-    return templates.TemplateResponse("stepper/finalize.html", {
-        "request": request,
-        "llm_content": llm_content,
-        "selected_template": template,
-        "case_id": case_id_current,
-        "ngay_bao_cao": ngay_bao_cao
-    })
+    # Xóa cache sau khi xử lý xong
+    uploaded_files_info = []
+
+    # Chuyển về trang chủ sau khi hoàn thành
+    return RedirectResponse(url="/", status_code=303)
 
 @app.post("/support/verify")
 async def support_verify(request: Request):

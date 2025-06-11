@@ -2,39 +2,49 @@
 {% set step = 4 %}
 {% set title = "Báo cáo, ghi chú" %}
 {% block content %}
-<div class="container mt-4">
-    <div class="row">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">Hoàn thiện hồ sơ</h5>
+<div class="container-fluid mt-4">
+    <form method="POST" action="/finalize">
+        <div class="row mb-3">
+            <div class="col-md-3">
+                <label for="template" class="form-label">Chọn biểu mẫu</label>
+                <select class="form-select" id="template" name="template" onchange="updateEditorContent()">
+                    <option value="CT04" {% if selected_template == 'CT04' %}selected{% endif %}>Mẫu CT04 - Phiếu tiếp nhận hồ sơ</option>
+                    <option value="CT05" {% if selected_template == 'CT05' %}selected{% endif %}>Mẫu CT05 - Thông báo thiếu hồ sơ</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="so_bao_cao" class="form-label">Số báo cáo</label>
+                <input type="text" class="form-control" id="so_bao_cao" name="so_bao_cao" value="{{ so_bao_cao or '' }}">
+            </div>
+            <div class="col-md-3">
+                <label for="ngay_bao_cao" class="form-label">Ngày báo cáo</label>
+                <input type="date" class="form-control" id="ngay_bao_cao" name="ngay_bao_cao" value="{{ ngay_bao_cao or '' }}">
+            </div>
+        </div>
+        <div class="row mb-3">
+            <div class="col-12">
+                <textarea id="editor" name="content"></textarea>
+            </div>
+        </div>
+        <div class="row mb-3">
+            <div class="col-12 d-flex justify-content-between">
+                <div>
+                    <button type="button" class="btn btn-outline-secondary" onclick="downloadWord()">Tải xuống Word</button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="printReport()">In báo cáo</button>
+                    <button type="button" class="btn btn-outline-primary">Đính kèm báo cáo</button>
                 </div>
-                <div class="card-body">
-                    <form method="POST" action="/finalize">
-                        <div class="mb-3">
-                            <label for="template" class="form-label">Chọn mẫu</label>
-                            <select class="form-select" id="template" name="template" onchange="updateEditorContent()">
-                                <option value="CT04" {% if selected_template == 'CT04' %}selected{% endif %}>Mẫu CT04 - Phiếu tiếp nhận hồ sơ</option>
-                                <option value="CT05" {% if selected_template == 'CT05' %}selected{% endif %}>Mẫu CT05 - Thông báo thiếu hồ sơ</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label for="editor" class="form-label">Nội dung</label>
-                            <textarea id="editor" name="content"></textarea>
-                        </div>
-                        <div class="mb-3">
-                            <label for="ngay_bao_cao" class="form-label">Ngày báo cáo</label>
-                            <input type="date" class="form-control" id="ngay_bao_cao" name="ngay_bao_cao" value="{{ ngay_bao_cao }}">
-                        </div>
-                        <div class="d-flex justify-content-between">
-                            <a href="/verify" class="btn btn-secondary">Quay lại</a>
-                            <button type="submit" class="btn btn-primary">Hoàn thành</button>
-                        </div>
-                    </form>
+                <div>
+                    <button type="button" class="btn btn-danger" onclick="hoanThanhHoSo()">Hoàn thành</button>
+                    <button type="button" class="btn btn-primary">Lưu</button>
+                    <a href="/verify" class="btn btn-secondary">Quay Lại</a>
                 </div>
             </div>
         </div>
-    </div>
+        <div id="loadingSpinner" style="display:none;text-align:center;">
+            <div class="spinner-border text-primary" role="status"></div>
+            <div>Đang xử lý, vui lòng chờ...</div>
+        </div>
+    </form>
 </div>
 
 <!-- CKEditor -->
@@ -76,5 +86,40 @@ document.querySelector('form').addEventListener('submit', function(e) {
     const content = editor.getData();
     document.querySelector('#editor').value = content;
 });
+
+function hoanThanhHoSo() {
+    document.querySelector('#editor').value = editor.getData();
+    document.getElementById('loadingSpinner').style.display = 'block';
+    document.querySelector('.btn-danger').disabled = true;
+    fetch('/finalize', {method: 'POST', body: new FormData(document.querySelector('form'))})
+        .then(() => {
+            window.location.href = '/';
+        });
+}
+
+function downloadWord() {
+    const content = editor.getData();
+    const header = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'></head><body>`;
+    const footer = '</body></html>';
+    const sourceHTML = header + content + footer;
+    const source = 'data:application/vnd.ms-word;charset=utf-8,' + encodeURIComponent(sourceHTML);
+    const fileDownload = document.createElement('a');
+    fileDownload.href = source;
+    fileDownload.download = 'bao_cao.doc';
+    document.body.appendChild(fileDownload);
+    fileDownload.click();
+    document.body.removeChild(fileDownload);
+}
+
+function printReport() {
+    const content = editor.getData();
+    const printWindow = window.open('', '', 'height=800,width=800');
+    printWindow.document.write('<html><head><title>In báo cáo</title><meta charset="utf-8"></head><body>');
+    printWindow.document.write(content);
+    printWindow.document.write('</body></html>');
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
+}
 </script>
 {% endblock %}
