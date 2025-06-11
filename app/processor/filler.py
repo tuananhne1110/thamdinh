@@ -97,6 +97,7 @@ class LLMFiller:
                 prompt_text = prompt_generator(json.dumps(prompt_data, ensure_ascii=False), ma_ho_so=prompt_data.get('ma_ho_so', ''))
             else:
                 prompt_text = prompt_generator(json.dumps(prompt_data, ensure_ascii=False))
+
             # Call LLM API
             response = self._call_llm_api(prompt_text)
             if not response or response == "Lỗi khi gọi LLM API.":

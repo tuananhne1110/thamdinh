@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Form, File, UploadFile, HTTPException
+from fastapi import FastAPI, Request, Form, File, UploadFile, HTTPException, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -12,9 +12,22 @@ from app.processor.classifier import classify_document, model as yolo_model
 from app.processor.validator import validate_ho_so_from_ocr  
 from app.processor.filler import LLMFiller
 from jinja2 import Template as JinjaTemplate
+from app.database import get_db
+from sqlalchemy.orm import Session
+from app.services.case_service import CaseService
+from app.middleware.session import SessionMiddleware
+from app.models import Case
 
 # Tạo FastAPI app
 app = FastAPI(title="Hệ thống Cơ sở dữ liệu thẩm tra, thẩm định")
+
+# Add session middleware
+session_middleware = SessionMiddleware(app)
+app.add_middleware(SessionMiddleware)
+
+# Store middleware instance in app state
+app.state.session_middleware = session_middleware
+
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -27,9 +40,6 @@ document_extractor = DocumentExtractor()
 
 # Khởi tạo LLMFiller
 llm_filler = LLMFiller()
-
-# Biến toàn cục để lưu trữ danh sách file đã upload
-uploaded_files_info: List[Dict] = []
 
 # Thêm biến toàn cục để sinh mã hồ sơ tự động
 last_case_id = 0
@@ -152,18 +162,65 @@ async def step_upload_post(
     related_files: List[UploadFile] = File(None)
 ):
     try:
-        global uploaded_files_info, last_case_id, case_id_current
+        print("[DEBUG] Starting upload_post")
+        print("[DEBUG] Received procedure:", procedure)
+        print("[DEBUG] Received case:", case)
+        
+        session = request.state.session
+        # Convert procedure and case to integer id if possible
+        procedure_id = None
+        case_id = None
+        
+        # Map procedure code/name to ID
+        if procedure:
+            from app.data.procedures import get_procedure_list
+            procedures = get_procedure_list()
+            print("[DEBUG] Available procedures:", procedures)
+            for p in procedures:
+                print("[DEBUG] Compare with:", p.get("name"), p.get("id"), p.get("code"))
+                if p.get("name") == procedure or p.get("id") == procedure or p.get("code") == procedure:
+                    procedure_id = p.get("id")
+                    print("[DEBUG] Mapped procedure to ID:", procedure_id)
+                    break
+            
+            if procedure_id is None:
+                try:
+                    procedure_id = int(procedure)
+                    print("[DEBUG] Converted procedure to ID:", procedure_id)
+                except ValueError:
+                    print("[ERROR] Could not convert procedure to ID")
+                    procedure_id = None
+
+        # Map case code/name to ID
+        if case and procedure_id:
+            from app.data.procedures import get_procedure_cases
+            cases = get_procedure_cases(procedure_id)
+            print("[DEBUG] Available cases:", cases)
+            for c in cases:
+                print("[DEBUG] Compare with:", c.get("name"), c.get("id"), c.get("code"))
+                if c.get("name") == case or c.get("id") == case or c.get("code") == case:
+                    case_id = c.get("id")
+                    print("[DEBUG] Mapped case to ID:", case_id)
+                    break
+            
+            if case_id is None:
+                try:
+                    case_id = int(case)
+                    print("[DEBUG] Converted case to ID:", case_id)
+                except ValueError:
+                    print("[ERROR] Could not convert case to ID")
+                    case_id = None
+
+        print("[DEBUG] Final procedure_id:", procedure_id)
+        print("[DEBUG] Final case_id:", case_id)
+
         uploaded_files_info = []  # Reset danh sách file
         files = []
         if form_files:
             files.extend(form_files)
         if related_files:
             files.extend(related_files)
-        print("Tên các file nhận được (trước khi lọc):", [f.filename for f in files])
-        # Loại bỏ file rỗng
-        files = [f for f in files if f.filename]
-        print("Tên các file thực sự xử lý (sau khi lọc):", [f.filename for f in files])
-        print("Số file thực sự xử lý:", len(files))
+        
         if not files:
             return templates.TemplateResponse("stepper/upload.html", {
                 "request": request,
@@ -172,8 +229,22 @@ async def step_upload_post(
                 "current_time": datetime.now().strftime("%H:%M"),
                 "error": "Không có file nào được chọn"
             })
+
         upload_dir = "uploads"
         os.makedirs(upload_dir, exist_ok=True)
+
+        # Generate case ID and ma_ho_so
+        last_case_id = session.get("last_case_id", 0) + 1
+        case_id_current = last_case_id
+        ma_ho_so = f"{case_id_current:06d}"
+
+        # Update session data
+        session["last_case_id"] = last_case_id
+        session["case_id_current"] = case_id_current
+        session["ma_ho_so"] = ma_ho_so
+        session["procedure_id"] = procedure_id
+        session["case_id"] = case_id
+
         for file in files:
             if file.filename:
                 file_path = os.path.join(upload_dir, file.filename)
@@ -189,7 +260,6 @@ async def step_upload_post(
                     predicted_class = None
                     confidence = None
                     if ext in ["jpg", "jpeg", "png"] and yolo_model is not None:
-                        # Dùng YOLO
                         results = yolo_model(file_path)
                         if results and len(results) > 0:
                             result = results[0]
@@ -198,7 +268,6 @@ async def step_upload_post(
                                 confidence = float(result.probs.top1conf)
                                 predicted_class = yolo_model.names[top1_idx]
                     else:
-                        # Dùng text classifier
                         predicted_class = classify_document(text)
                         confidence = 1.0 if predicted_class != "khac" else 0.0
                     
@@ -239,38 +308,7 @@ async def step_upload_post(
                                 structured_data['Số định danh cá nhân của chủ hộ'] = line.replace('9. Số định danh cá nhân của chủ hộ:', '').strip()
                             elif line.startswith('10. Nội dung đề nghị:'):
                                 structured_data['Nội dung đề nghị'] = line.replace('10. Nội dung đề nghị:', '').strip()
-                            elif line.startswith('11. Thông tin về thành viên trong hộ gia đình cùng thay đổi'):
-                                current_section = 'family_members'
-                                structured_data['family_members'] = []
-                                member_info = {}
-                                member_idx = 1
-                            elif current_section == 'family_members':
-                                # Parse family member information
-                                if line.startswith(f'11.{member_idx}.1. Họ và tên:'):
-                                    member_info['name'] = line.replace(f'11.{member_idx}.1. Họ và tên:', '').strip()
-                                elif line.startswith(f'11.{member_idx}.2. Ngày tháng năm sinh:'):
-                                    member_info['dob'] = line.replace(f'11.{member_idx}.2. Ngày tháng năm sinh:', '').strip()
-                                elif line.startswith(f'11.{member_idx}.3. Giới tính:'):
-                                    member_info['gender'] = line.replace(f'11.{member_idx}.3. Giới tính:', '').strip()
-                                elif line.startswith(f'11.{member_idx}.4. Số định danh cá nhân:'):
-                                    member_info['id_number'] = line.replace(f'11.{member_idx}.4. Số định danh cá nhân:', '').strip()
-                                elif line.startswith(f'11.{member_idx}.5. Mối quan hệ với chủ hộ:'):
-                                    member_info['relationship'] = line.replace(f'11.{member_idx}.5. Mối quan hệ với chủ hộ:', '').strip()
-                                    # Đã đủ thông tin 1 thành viên, thêm vào structured_data
-                                    prefix = f'Thành viên {member_idx}'
-                                    if 'name' in member_info:
-                                        structured_data[f'{prefix} - Họ và tên'] = member_info['name']
-                                    if 'dob' in member_info:
-                                        structured_data[f'{prefix} - Ngày sinh'] = member_info['dob']
-                                    if 'gender' in member_info:
-                                        structured_data[f'{prefix} - Giới tính'] = member_info['gender']
-                                    if 'id_number' in member_info:
-                                        structured_data[f'{prefix} - Số định danh cá nhân'] = member_info['id_number']
-                                    if 'relationship' in member_info:
-                                        structured_data[f'{prefix} - Mối quan hệ với chủ hộ'] = member_info['relationship']
-                                    structured_data['family_members'].append(member_info)
-                                    member_info = {}
-                                    member_idx += 1
+
                     is_declaration = (dropdown_value in ["to_khai", "ct04"])
                     file_info = {
                         "filename": file.filename,
@@ -278,51 +316,47 @@ async def step_upload_post(
                         "content": text,
                         "created_date": datetime.now().strftime("%Y-%m-%d"),
                         "doc_class": predicted_class or data.get("type", "unknown"),
-                        "fields": structured_data if is_declaration else {}, # Use structured data from LLM
+                        "fields": structured_data if is_declaration else {},
                         "show_extract_fields": is_declaration,
                         "predicted_class": predicted_class,
                         "confidence": confidence,
                         "dropdown_value": dropdown_value,
-                        "id_numbers": data.get("id_numbers", []),  # Keep ID numbers from OCR
-                        "procedure_id": procedure,
-                        "case_id": case,
-                        "procedure": procedure,  # Thêm procedure để dễ debug
-                        "case": case  # Thêm case để dễ debug
+                        "id_numbers": data.get("id_numbers", []),
+                        "procedure_id": procedure_id,
+                        "case_id": case_id,
+                        "ma_ho_so": ma_ho_so  # Thêm ma_ho_so vào file_info
                     }
                     uploaded_files_info.append(file_info)
-                    print(f"Đã xử lý file: {file.filename}")
-                    print(f"Procedure ID: {procedure}, Case ID: {case}")  # Debug log
                 except Exception as e:
                     print(f"Error processing file {file.filename}: {str(e)}")
                     continue
-        print("Tổng số file đã xử lý:", len(uploaded_files_info))
-        # Sau khi xử lý xong file, sinh mã hồ sơ mới
-        last_case_id += 1
-        case_id_current = last_case_id
-        # Gán mã hồ sơ (dạng số, padding 6 chữ số)
-        ma_ho_so = f"{case_id_current:06d}"
-        for file_info in uploaded_files_info:
-            file_info["ma_ho_so"] = ma_ho_so
-            file_info["case_id"] = case_id_current
-        # Redirect sang bước xử lý tài liệu với procedure/case và truyền mã hồ sơ
-        if procedure and case:
-            return RedirectResponse(url=f"/process?procedure={procedure}&case={case}&case_id={case_id_current}", status_code=303)
-        else:
-            return RedirectResponse(url=f"/process?case_id={case_id_current}", status_code=303)
+
+        # Update session data
+        session["uploaded_files_info"] = uploaded_files_info
+        session["fields"] = uploaded_files_info[0].get("fields", {}) if uploaded_files_info else {}
+
+        print("[DEBUG] Updated session data:")
+        print("- procedure_id:", procedure_id)
+        print("- case_id:", case_id)
+        print("- ma_ho_so:", ma_ho_so)
+
+        return RedirectResponse(url="/process", status_code=303)
     except Exception as e:
+        print(f"[ERROR] Error in upload_post: {str(e)}")
         return templates.TemplateResponse("stepper/upload.html", {
             "request": request,
             "procedures": get_procedure_list(),
             "today": datetime.now().strftime("%Y-%m-%d"),
             "current_time": datetime.now().strftime("%H:%M"),
-            "error": f"Lỗi khi tải lên: {str(e)}"
+            "error": f"Lỗi khi xử lý file: {str(e)}"
         })
 
 @app.get("/process", response_class=HTMLResponse)
 async def step_process_get(request: Request):
-    global uploaded_files_info, case_id_current
-    procedure_id = request.query_params.get('procedure')
-    case_id = request.query_params.get('case')
+    session = request.state.session
+    case_id_current = session.get("case_id_current")
+    procedure_id = session.get("procedure_id", "")
+    case_id = session.get("case_id", "")
     case_id_param = request.query_params.get('case_id')
     if case_id_param:
         case_id_current = int(case_id_param)
@@ -330,6 +364,7 @@ async def step_process_get(request: Request):
     required_docs = []
     checklist = []
     is_full = False
+    uploaded_files_info = session.get("uploaded_files_info", [])
     if procedure_id and case_id:
         from app.data.procedures import get_procedure_details, get_required_documents
         procedure_details = get_procedure_details(procedure_id, case_id)
@@ -342,17 +377,20 @@ async def step_process_get(request: Request):
         "required_docs": required_docs,
         "checklist": checklist,
         "is_full": is_full,
-        "case_id": case_id_current
+        "case_id": case_id_current,
+        "procedure_id": procedure_id,
+        "case_id_hidden": case_id
     })
 
 @app.post("/process")
 async def step_process_post(request: Request):
+    session = request.state.session
     form = await request.form()
     procedure_id = form.get('procedure')
     case_id = form.get('case')
-    global uploaded_files_info
     import json
     fields_data = {}
+    uploaded_files_info = session.get("uploaded_files_info", [])
 
     # Lấy dữ liệu từ form
     for key, value in form.items():
@@ -364,7 +402,6 @@ async def step_process_post(request: Request):
                 field_name = m.group(2)
                 if filename not in fields_data:
                     fields_data[filename] = {}
-                # Nếu value là JSON hợp lệ, parse về list/dict
                 try:
                     parsed = json.loads(value)
                     fields_data[filename][field_name] = parsed
@@ -376,31 +413,34 @@ async def step_process_post(request: Request):
         fname = file_info.get('filename')
         if fname in fields_data:
             file_info['fields'].update(fields_data[fname])
+    session["uploaded_files_info"] = uploaded_files_info
 
     # Kiểm tra checklist và chuyển hướng
     required_docs = []
     is_full = False
     if procedure_id and case_id:
-        print(f"Processing for procedure: {procedure_id}, case: {case_id}")
+        print(f"[DEBUG] procedure_id: {procedure_id}, case_id: {case_id}")
         required_docs = get_required_documents(procedure_id, case_id)
         checklist, is_full = get_checklist(uploaded_files_info, required_docs)
-        print("Checklist results:")
+        print("[DEBUG] Checklist results:")
         for item in checklist:
             print(f"- {item['name']}: {item['status']}")
-        print(f"Is full: {is_full}")
+        print(f"[DEBUG] is_full: {is_full}")
         if is_full:
-            print("Documents complete - Redirecting to verify")
+            print("[DEBUG] Documents complete - Redirecting to verify")
             return RedirectResponse(url="/verify", status_code=303)
         else:
-            print("Documents incomplete - Redirecting to finalize")
+            print("[DEBUG] Documents incomplete - Redirecting to finalize")
             return RedirectResponse(url="/finalize", status_code=303)
     else:
-        print("No procedure/case specified")
+        print(f"[DEBUG] No procedure/case specified: procedure_id={procedure_id}, case_id={case_id}")
         return RedirectResponse(url="/finalize", status_code=303)
 
 @app.get("/verify", response_class=HTMLResponse)
 async def step_verify_get(request: Request):
-    global uploaded_files_info, case_id_current
+    session = request.state.session
+    case_id_current = session.get("case_id_current")
+    uploaded_files_info = session.get("uploaded_files_info", [])
     print("Uploaded Files Info:", uploaded_files_info)
     if not uploaded_files_info:
         return templates.TemplateResponse("stepper/verify.html", {
@@ -618,9 +658,10 @@ async def step_verify_get(request: Request):
 
 @app.post("/verify")
 async def step_verify_post(request: Request):
+    session = request.state.session
     form = await request.form()
     import json
-    global uploaded_files_info
+    uploaded_files_info = session.get("uploaded_files_info", [])
     fields_json = form.get('fields')
     if not fields_json:
         return templates.TemplateResponse("stepper/verify.html", {
@@ -631,7 +672,6 @@ async def step_verify_post(request: Request):
         })
     try:
         fields = json.loads(fields_json)
-        # Lấy lại file_info gốc
         file_info = next((f for f in uploaded_files_info if f.get("doc_class") in ["ct01", "to_khai", "ct04"]), None)
         fields_origin = file_info.get("fields", {}) if file_info else {}
         def get_field_value_safe(f, key, fallback=""):
@@ -697,12 +737,14 @@ async def step_verify_post(request: Request):
             break
     
     # Chuyển hướng đến trang finalize
+    session["uploaded_files_info"] = uploaded_files_info
     return RedirectResponse(url="/finalize", status_code=303)
 
 @app.get("/finalize", response_class=HTMLResponse)
 async def step_finalize_get(request: Request):
-    global uploaded_files_info, case_id_current
-    # Lấy đúng file tờ khai để kiểm tra hợp lệ
+    session = request.state.session
+    case_id_current = session.get("case_id_current")
+    uploaded_files_info = session.get("uploaded_files_info", [])
     file_info = next((f for f in uploaded_files_info if f.get("doc_class") in ["ct01", "to_khai", "ct04"]), None)
     if not file_info and uploaded_files_info:
         file_info = uploaded_files_info[0]
@@ -859,127 +901,68 @@ async def step_finalize_get(request: Request):
     })
 
 @app.post("/finalize", response_class=HTMLResponse)
-async def step_finalize_post(request: Request):
-    form = await request.form()
-    template = form.get("template", "CT04")
-    ngay_bao_cao = form.get("ngay_bao_cao", "")
-    import os
-    global uploaded_files_info, case_id_current
-    # Lấy đúng file tờ khai để kiểm tra hợp lệ
-    file_info = next((f for f in uploaded_files_info if f.get("doc_class") in ["ct01", "to_khai", "ct04"]), None)
-    if not file_info and uploaded_files_info:
-        file_info = uploaded_files_info[0]
-    fields = file_info.get("fields", {}) if file_info else {}
-    print("[DEBUG] Fields for validation:", fields)
-    is_full = file_info.get("is_full", False) if file_info else False
-    invalid_fields = file_info.get("invalid_fields", []) if file_info else []
-    ma_ho_so = file_info.get("ma_ho_so") if file_info else None
-    validation_result = file_info.get("validation_result", {}) if file_info else {}
-
-    # Lấy thành phần hồ sơ nộp từ procedure/case
-    required_docs = []
-    if file_info:
-        from app.data.procedures import get_required_documents
-        procedure_key = file_info.get('procedure') or file_info.get('procedure_id') or ''
-        case_key = file_info.get('case') or file_info.get('case_id') or ''
-        print(f"[DEBUG] Getting required docs for procedure: {procedure_key}, case: {case_key}")
-        required_docs = get_required_documents(str(procedure_key), str(case_key))
-        print(f"[DEBUG] Required docs: {required_docs}")
-
-    # Luôn khởi tạo lại invalid_fields mới nhất từ validation_result
-    invalid_fields = []
-    info_status = 'pass'
-    for field_name, field_data in validation_result.items():
-        if isinstance(field_data, dict):
-            status = field_data.get('status', '')
-            if status != 'Đạt':
-                info_status = 'fail'
-                invalid_fields.append(f"{field_name}: {status}")
-        elif isinstance(field_data, list):
-            for item in field_data:
-                if isinstance(item, dict):
-                    for sub_field, sub_data in item.items():
-                        if isinstance(sub_data, dict):
-                            status = sub_data.get('status', '')
-                            if status != 'Đạt':
-                                info_status = 'fail'
-                                invalid_fields.append(f"{field_name} - {sub_field}: {status}")
-        elif field_data != 'Đạt':
-            info_status = 'fail'
-            invalid_fields.append(f"{field_name}: {field_data}")
-    print("[DEBUG] invalid_fields mới nhất:", invalid_fields)
-    if file_info is not None:
-        file_info["invalid_fields"] = invalid_fields
-
-    # Xác định form type dựa trên kết quả validation và giấy tờ còn thiếu
-    missing_docs = get_missing_documents(required_docs, uploaded_files_info)
-    if not missing_docs and info_status == 'pass':
-        form_type = 'CT04'
-    else:
-        form_type = template
-    today = datetime.now()
-    ngay_lap_phieu = today.strftime('%d/%m/%Y')
-    # Chuẩn bị dữ liệu đầu vào cho LLM
-    if fields:
-        try:
-            validator_input = {
-                "Tên cơ quan đăng ký cư trú": str(get_field_value(fields, "Cơ quan tiếp nhận")).strip(),
-                "Họ, chữ đệm và tên": str(get_field_value(fields, "Họ, chữ đệm và tên")).strip(),
-                "Ngày, tháng, năm sinh": str(get_field_value(fields, "Ngày tháng năm sinh")).strip(),
-                "Giới tính": str(get_field_value(fields, "Giới tính")).lower().strip(),
-                "Số định danh cá nhân": str(get_field_value(fields, "Số định danh cá nhân") or get_field_value(fields, "Số định danh cá nhân/CMND")).strip(),
-                "Số điện thoại": str(get_field_value(fields, "Số điện thoại")).strip(),
-                "Email": str(get_field_value(fields, "Email")).strip(),
-                "Họ, chữ đệm và tên chủ hộ": str(get_field_value(fields, "Họ và tên chủ hộ")).strip(),
-                "Quan hệ với chủ hộ": str(get_field_value(fields, "Mối quan hệ với chủ hộ")).lower().strip(),
-                "Số định danh cá nhân của chủ hộ": str(get_field_value(fields, "Số định danh cá nhân của chủ hộ")).strip(),
-                "Nội dung đề nghị": str(get_field_value(fields, "Nội dung đề nghị")).strip(),
-                "Thành viên thay đổi": [],
-                "thanh_phan_ho_so": [doc['name'] for doc in required_docs] if required_docs else [],
-                "ma_ho_so": ma_ho_so or "",
-                "giay_to_thieu": missing_docs,
-                "ngay_lap_phieu": ngay_lap_phieu
-            }
-            for i in range(1, 10):
-                prefix = f"Thành viên {i}"
-                if f"{prefix} - Họ và tên" in fields:
-                    member = {
-                        "Họ, chữ đệm và tên": fields.get(f"{prefix} - Họ và tên", ""),
-                        "Ngày sinh": fields.get(f"{prefix} - Ngày sinh", ""),
-                        "Giới tính": fields.get(f"{prefix} - Giới tính", "").lower().strip(),
-                        "Số định danh cá nhân": str(fields.get(f"{prefix} - Số định danh cá nhân", "")).strip(),
-                        "Quan hệ với chủ hộ": fields.get(f"{prefix} - Mối quan hệ với chủ hộ", "").lower().strip()
-                    }
-                    validator_input["Thành viên thay đổi"].append(member)
-            if form_type == "CT05" and invalid_fields:
-                validator_input["invalid_fields"] = invalid_fields
-            else:
-                validator_input.pop("invalid_fields", None)
-            print("[DEBUG] validator_input truyền vào LLM:", validator_input)
-            from app.processor.filler import LLMFiller
-            llm_content = LLMFiller()(validator_input, form_type=form_type)
-        except Exception as e:
-            print(f"Error filling form: {str(e)}")
-            llm_content = "Lỗi khi điền form tự động"
-    else:
-        template_file = f"app/templates/snippets/ct04.html" if form_type == "CT04" else f"app/templates/snippets/ct05.html"
-        llm_content = ""
-        if os.path.exists(template_file):
-            with open(template_file, 'r', encoding='utf-8') as f:
-                raw_html = f.read()
-                jinja_template = JinjaTemplate(raw_html)
-                context = {**fields, "case_id": case_id_current}
-                if form_type == 'CT05':
-                    context["invalid_fields"] = invalid_fields
-                llm_content = jinja_template.render(**context)
+async def step_finalize_post(request: Request, db: Session = Depends(get_db)):
+    try:
+        print("[DEBUG] Starting finalize_post")
+        session = request.state.session
+        print("[DEBUG] Session data:", session)
+        
+        # Get procedure_id and case_id from session
+        procedure_id = session.get("procedure_id")
+        case_id = session.get("case_id")
+        uploaded_files_info = session.get("uploaded_files_info", [])
+        fields = session.get("fields", {})
+        
+        # Lấy ma_ho_so từ file_info đầu tiên
+        ma_ho_so = uploaded_files_info[0].get("ma_ho_so", "") if uploaded_files_info else ""
+        
+        print("[DEBUG] Before update - procedure_id:", procedure_id, type(procedure_id))
+        print("[DEBUG] Before update - case_id:", case_id, type(case_id))
+        print("[DEBUG] Before update - uploaded_files_info:", uploaded_files_info)
+        print("[DEBUG] ma_ho_so:", ma_ho_so)
+        
+        # Update procedure_id and case_id in uploaded_files_info
+        for file_info in uploaded_files_info:
+            file_info["procedure_id"] = procedure_id
+            file_info["case_id"] = case_id
+        print("[DEBUG] After update - uploaded_files_info:", uploaded_files_info)
+        
+        # Save case if we have valid procedure_id and uploaded_files_info
+        if procedure_id and uploaded_files_info:
+            try:
+                print("[DEBUG] Attempting to save case with:")
+                print("- procedure_id:", procedure_id)
+                print("- fields:", fields)
+                print("- documents:", uploaded_files_info)
+                print("- ma_ho_so:", ma_ho_so)
+                
+                # Thêm ma_ho_so vào fields
+                fields["ma_ho_so"] = ma_ho_so
+                
+                case = CaseService.save_case(
+                    db=db,
+                    procedure_id=procedure_id,
+                    case_data=fields,
+                    documents=uploaded_files_info
+                )
+                session["saved_case_id"] = case.id
+                print("[DEBUG] Successfully saved case:", case.id)
+            except Exception as e:
+                print("[ERROR] Failed to save case:", str(e))
+                raise
         else:
-            llm_content = f"Không tìm thấy file mẫu {template_file}!"
+            print("[DEBUG] Not saving case because:")
+            print("- procedure_id:", procedure_id)
+            print("- uploaded_files_info:", bool(uploaded_files_info))
 
-    # Xóa cache sau khi xử lý xong
-    uploaded_files_info = []
-
-    # Chuyển về trang chủ sau khi hoàn thành
-    return RedirectResponse(url="/", status_code=303)
+        session.clear()
+        return RedirectResponse(url="/", status_code=303)
+    except Exception as e:
+        print(f"[ERROR] Error in finalize_post: {str(e)}")
+        return templates.TemplateResponse("stepper/finalize.html", {
+            "request": request,
+            "error": f"Lỗi khi lưu hồ sơ: {str(e)}"
+        })
 
 @app.post("/support/verify")
 async def support_verify(request: Request):
@@ -1037,3 +1020,15 @@ def is_all_fields_valid(validation_result):
         elif v != 'Đạt':
             return False
     return True
+
+@app.get("/cases", response_class=HTMLResponse)
+def cases_list(request: Request, db: Session = Depends(get_db)):
+    cases = db.query(Case).order_by(Case.created_at.desc()).all()
+    return templates.TemplateResponse("reports/cases_list.html", {"request": request, "cases": cases})
+
+@app.get("/case/{case_id}", response_class=HTMLResponse)
+def case_detail(request: Request, case_id: str, db: Session = Depends(get_db)):
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        return templates.TemplateResponse("reports/case_detail.html", {"request": request, "error": "Không tìm thấy hồ sơ."})
+    return templates.TemplateResponse("reports/case_detail.html", {"request": request, "case": case})

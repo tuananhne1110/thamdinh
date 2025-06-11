@@ -83,10 +83,8 @@
 
                 {% if results %}
                 <form method="POST" action="/process" id="edit-form">
-                    {% if procedure_details and procedure_details.id and procedure_details.case and procedure_details.case.id %}
-                        <input type="hidden" name="procedure" value="{{ procedure_details.id }}">
-                        <input type="hidden" name="case" value="{{ procedure_details.case.id }}">
-                    {% endif %}
+                    <input type="hidden" name="procedure" value="{{ procedure_id }}">
+                    <input type="hidden" name="case" value="{{ case_id }}">
 
                     {% for result in results %}
                         {% set idx = loop.index0 %}

@@ -243,6 +243,7 @@ class Form_CT04_Prompt_Generator:
 3. Nếu thiếu thông tin cho bất kỳ trường nào, sử dụng "..." làm ký tự thay thế.
 4. Chỉ trả về HTML hoàn chỉnh, KHÔNG bọc trong markdown hay plaintext, giữ nguyên cấu trúc của biểu mẫu Mẫu CT04, bao gồm tiêu đề, bảng và khoảng cách.
 5. Đảm bảo định dạng ngày theo DD/MM/YYYY và giờ theo HH:MM.
+6. Đảm bảo sau khi điền thông tin vào thì sẽ bỏ "..." và thay thế bằng thông tin đã điền.
 
 **Đầu ra**:
 Cung cấp biểu mẫu Mẫu CT04 đã điền hoàn chỉnh dưới dạng HTML, khớp chính xác với cấu trúc của biểu mẫu.
