@@ -213,6 +213,15 @@ async def step_upload_post(
 
         print("[DEBUG] Final procedure_id:", procedure_id)
         print("[DEBUG] Final case_id:", case_id)
+        # Lưu vào session nếu có giá trị
+        if procedure_id:
+            session["procedure_id"] = procedure_id
+        else:
+            print("[WARNING] procedure_id is empty, not saving to session!")
+        if case_id:
+            session["case_id"] = case_id
+        else:
+            print("[WARNING] case_id is empty, not saving to session!")
 
         uploaded_files_info = []  # Reset danh sách file
         files = []
@@ -232,18 +241,6 @@ async def step_upload_post(
 
         upload_dir = "uploads"
         os.makedirs(upload_dir, exist_ok=True)
-
-        # Generate case ID and ma_ho_so
-        last_case_id = session.get("last_case_id", 0) + 1
-        case_id_current = last_case_id
-        ma_ho_so = f"{case_id_current:06d}"
-
-        # Update session data
-        session["last_case_id"] = last_case_id
-        session["case_id_current"] = case_id_current
-        session["ma_ho_so"] = ma_ho_so
-        session["procedure_id"] = procedure_id
-        session["case_id"] = case_id
 
         for file in files:
             if file.filename:
@@ -308,7 +305,38 @@ async def step_upload_post(
                                 structured_data['Số định danh cá nhân của chủ hộ'] = line.replace('9. Số định danh cá nhân của chủ hộ:', '').strip()
                             elif line.startswith('10. Nội dung đề nghị:'):
                                 structured_data['Nội dung đề nghị'] = line.replace('10. Nội dung đề nghị:', '').strip()
-
+                            elif line.startswith('11. Thông tin về thành viên trong hộ gia đình cùng thay đổi'):
+                                current_section = 'family_members'
+                                structured_data['family_members'] = []
+                                member_info = {}
+                                member_idx = 1
+                            elif current_section == 'family_members':
+                                # Parse family member information
+                                if line.startswith(f'11.{member_idx}.1. Họ và tên:'):
+                                    member_info['name'] = line.replace(f'11.{member_idx}.1. Họ và tên:', '').strip()
+                                elif line.startswith(f'11.{member_idx}.2. Ngày tháng năm sinh:'):
+                                    member_info['dob'] = line.replace(f'11.{member_idx}.2. Ngày tháng năm sinh:', '').strip()
+                                elif line.startswith(f'11.{member_idx}.3. Giới tính:'):
+                                    member_info['gender'] = line.replace(f'11.{member_idx}.3. Giới tính:', '').strip()
+                                elif line.startswith(f'11.{member_idx}.4. Số định danh cá nhân:'):
+                                    member_info['id_number'] = line.replace(f'11.{member_idx}.4. Số định danh cá nhân:', '').strip()
+                                elif line.startswith(f'11.{member_idx}.5. Mối quan hệ với chủ hộ:'):
+                                    member_info['relationship'] = line.replace(f'11.{member_idx}.5. Mối quan hệ với chủ hộ:', '').strip()
+                                    # Đã đủ thông tin 1 thành viên, thêm vào structured_data
+                                    prefix = f'Thành viên {member_idx}'
+                                    if 'name' in member_info:
+                                        structured_data[f'{prefix} - Họ và tên'] = member_info['name']
+                                    if 'dob' in member_info:
+                                        structured_data[f'{prefix} - Ngày sinh'] = member_info['dob']
+                                    if 'gender' in member_info:
+                                        structured_data[f'{prefix} - Giới tính'] = member_info['gender']
+                                    if 'id_number' in member_info:
+                                        structured_data[f'{prefix} - Số định danh cá nhân'] = member_info['id_number']
+                                    if 'relationship' in member_info:
+                                        structured_data[f'{prefix} - Mối quan hệ với chủ hộ'] = member_info['relationship']
+                                    structured_data['family_members'].append(member_info)
+                                    member_info = {}
+                                    member_idx += 1
                     is_declaration = (dropdown_value in ["to_khai", "ct04"])
                     file_info = {
                         "filename": file.filename,
@@ -323,13 +351,24 @@ async def step_upload_post(
                         "dropdown_value": dropdown_value,
                         "id_numbers": data.get("id_numbers", []),
                         "procedure_id": procedure_id,
-                        "case_id": case_id,
-                        "ma_ho_so": ma_ho_so  # Thêm ma_ho_so vào file_info
+                        "case_id": case_id
                     }
                     uploaded_files_info.append(file_info)
                 except Exception as e:
                     print(f"Error processing file {file.filename}: {str(e)}")
                     continue
+
+        # Đảm bảo ma_ho_so luôn có trong uploaded_files_info để hiển thị ở bước finalize
+        temp_ma_ho_so = None
+        if uploaded_files_info:
+            # Nếu đã có ma_ho_so trong session thì giữ lại, nếu chưa có thì sinh tạm thời (dạng 6 số random)
+            temp_ma_ho_so = session.get("ma_ho_so")
+            if not temp_ma_ho_so:
+                import random
+                temp_ma_ho_so = f"{random.randint(1, 999999):06d}"
+                session["ma_ho_so"] = temp_ma_ho_so
+            for file_info in uploaded_files_info:
+                file_info["ma_ho_so"] = temp_ma_ho_so
 
         # Update session data
         session["uploaded_files_info"] = uploaded_files_info
@@ -338,7 +377,6 @@ async def step_upload_post(
         print("[DEBUG] Updated session data:")
         print("- procedure_id:", procedure_id)
         print("- case_id:", case_id)
-        print("- ma_ho_so:", ma_ho_so)
 
         return RedirectResponse(url="/process", status_code=303)
     except Exception as e:
@@ -360,6 +398,11 @@ async def step_process_get(request: Request):
     case_id_param = request.query_params.get('case_id')
     if case_id_param:
         case_id_current = int(case_id_param)
+    # Đảm bảo procedure_id và case_id luôn lấy từ session nếu không có
+    if not procedure_id:
+        procedure_id = session.get("procedure_id", "")
+    if not case_id:
+        case_id = session.get("case_id", "")
     procedure_details = None
     required_docs = []
     checklist = []
@@ -386,6 +429,7 @@ async def step_process_get(request: Request):
 async def step_process_post(request: Request):
     session = request.state.session
     form = await request.form()
+    print("[DEBUG] FORM DATA:", dict(form))  # Thêm dòng này để debug
     procedure_id = form.get('procedure')
     case_id = form.get('case')
     import json
@@ -753,6 +797,11 @@ async def step_finalize_get(request: Request):
     is_full = file_info.get("is_full", False) if file_info else False
     invalid_fields = file_info.get("invalid_fields", []) if file_info else []
     ma_ho_so = file_info.get("ma_ho_so") if file_info else None
+    if not ma_ho_so:
+        ma_ho_so = session.get("ma_ho_so")
+    if not ma_ho_so:
+        import random
+        ma_ho_so = f"{random.randint(1, 999999):06d}"
     validation_result = file_info.get("validation_result", {}) if file_info else {}
 
     # Lấy thành phần hồ sơ nộp từ procedure/case
@@ -839,7 +888,7 @@ async def step_finalize_get(request: Request):
                 "Nội dung đề nghị": str(get_field_value(fields, "Nội dung đề nghị")).strip(),
                 "Thành viên thay đổi": [],
                 "thanh_phan_ho_so": [doc['name'] for doc in required_docs] if required_docs else [],
-                "ma_ho_so": ma_ho_so or "",
+                "ma_ho_so": ma_ho_so,
                 "giay_to_thieu": missing_docs,
                 "ngay_lap_phieu": ngay_lap_phieu
             }
@@ -936,9 +985,6 @@ async def step_finalize_post(request: Request, db: Session = Depends(get_db)):
                 print("- documents:", uploaded_files_info)
                 print("- ma_ho_so:", ma_ho_so)
                 
-                # Thêm ma_ho_so vào fields
-                fields["ma_ho_so"] = ma_ho_so
-                
                 case = CaseService.save_case(
                     db=db,
                     procedure_id=procedure_id,
@@ -948,12 +994,12 @@ async def step_finalize_post(request: Request, db: Session = Depends(get_db)):
                 session["saved_case_id"] = case.id
                 print("[DEBUG] Successfully saved case:", case.id)
             except Exception as e:
-                print("[ERROR] Failed to save case:", str(e))
-                raise
+                    print("[ERROR] Failed to save case:", str(e))
+                    raise
         else:
-            print("[DEBUG] Not saving case because:")
-            print("- procedure_id:", procedure_id)
-            print("- uploaded_files_info:", bool(uploaded_files_info))
+                print("[DEBUG] Not saving case because:")
+                print("- procedure_id:", procedure_id)
+                print("- uploaded_files_info:", bool(uploaded_files_info))
 
         session.clear()
         return RedirectResponse(url="/", status_code=303)

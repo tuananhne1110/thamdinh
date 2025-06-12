@@ -121,5 +121,25 @@ function printReport() {
     printWindow.focus();
     setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Tự động điền mã hồ sơ vào ô số báo cáo
+    const maHoSo = "{{ ma_ho_so or '' }}";
+    if (maHoSo) {
+        document.getElementById('so_bao_cao').value = maHoSo;
+    }
+    // Tự động điền ngày hiện tại vào ô ngày báo cáo nếu chưa có
+    const ngayBaoCao = "{{ ngay_lap_phieu or '' }}";
+    if (ngayBaoCao) {
+        document.getElementById('ngay_bao_cao').value = ngayBaoCao;
+    } else {
+        // fallback: lấy ngày hiện tại
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        document.getElementById('ngay_bao_cao').value = `${yyyy}-${mm}-${dd}`;
+    }
+});
 </script>
 {% endblock %}
