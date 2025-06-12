@@ -481,7 +481,7 @@ async def step_process_post(request: Request):
         return RedirectResponse(url="/finalize", status_code=303)
 
 @app.get("/verify", response_class=HTMLResponse)
-async def step_verify_get(request: Request):
+async def step_verify_get(request: Request, db: Session = Depends(get_db)):
     session = request.state.session
     case_id_current = session.get("case_id_current")
     uploaded_files_info = session.get("uploaded_files_info", [])
@@ -569,6 +569,28 @@ async def step_verify_get(request: Request):
     from app.processor.validator import validate_ho_so_from_ocr
     validation_result = validate_ho_so_from_ocr(validate_input)
 
+    # Kiểm tra thông tin với database citizen
+    from app.services.citizen_service import CitizenService
+    citizen_data = {
+        "ho_ten": validate_input["Họ, chữ đệm và tên"],
+        "ngay_sinh": validate_input["Ngày, tháng, năm sinh"],
+        "gioi_tinh": validate_input["Giới tính"],
+        "cccd": validate_input["Số định danh cá nhân"]
+    }
+    db_verification = CitizenService.verify_citizen_info(db, citizen_data)
+    
+    # Thêm kết quả đối chiếu vào validation_result
+    if not db_verification["is_valid"]:
+        validation_result["Đối chiếu cơ sở dữ liệu"] = {
+            "status": "Không đạt",
+            "details": db_verification["mismatches"]
+        }
+    else:
+        validation_result["Đối chiếu cơ sở dữ liệu"] = {
+            "status": "Đạt",
+            "details": ["Thông tin khớp với cơ sở dữ liệu"]
+        }
+
     # Sau khi validate, in toàn bộ validation_result
     print("[DEBUG] validation_result:", validation_result)
     # Luôn khởi tạo lại invalid_fields mới (KHÔNG lấy từ file_info)
@@ -578,6 +600,9 @@ async def step_verify_get(request: Request):
             status = field_data.get('status', '')
             if status != 'Đạt':
                 invalid_fields.append(f"{field_name}: {status}")
+                if 'details' in field_data:
+                    for detail in field_data['details']:
+                        invalid_fields.append(f"- {detail}")
         elif isinstance(field_data, list):
             for item in field_data:
                 if isinstance(item, dict):
@@ -638,6 +663,11 @@ async def step_verify_get(request: Request):
         "Nội dung đề nghị": {
             "value": fields.get("Nội dung đề nghị", ""),
             "status": ""
+        },
+        "Đối chiếu cơ sở dữ liệu": {
+            "value": "Đã kiểm tra",
+            "status": validation_result.get("Đối chiếu cơ sở dữ liệu", {}).get("status", "Không xác định"),
+            "details": validation_result.get("Đối chiếu cơ sở dữ liệu", {}).get("details", [])
         }
     }
 
