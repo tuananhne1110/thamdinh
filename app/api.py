@@ -566,10 +566,7 @@ async def step_verify_get(request: Request, db: Session = Depends(get_db)):
     }
     print('DEBUG validate_input:', validate_input)
 
-    from app.processor.validator import validate_ho_so_from_ocr
-    validation_result = validate_ho_so_from_ocr(validate_input)
-
-    # Kiểm tra thông tin với database citizen
+    # Đối chiếu thông tin với database citizen
     from app.services.citizen_service import CitizenService
     citizen_data = {
         "ho_ten": validate_input["Họ, chữ đệm và tên"],
@@ -578,6 +575,10 @@ async def step_verify_get(request: Request, db: Session = Depends(get_db)):
         "cccd": validate_input["Số định danh cá nhân"]
     }
     db_verification = CitizenService.verify_citizen_info(db, citizen_data)
+    
+    # Validate thông tin từ OCR
+    from app.processor.validator import validate_ho_so_from_ocr
+    validation_result = validate_ho_so_from_ocr(validate_input)
     
     # Thêm kết quả đối chiếu vào validation_result
     if not db_verification["is_valid"]:
@@ -591,18 +592,21 @@ async def step_verify_get(request: Request, db: Session = Depends(get_db)):
             "details": ["Thông tin khớp với cơ sở dữ liệu"]
         }
 
-    # Sau khi validate, in toàn bộ validation_result
-    print("[DEBUG] validation_result:", validation_result)
-    # Luôn khởi tạo lại invalid_fields mới (KHÔNG lấy từ file_info)
+    # Tổng hợp invalid_fields từ validation_result
     invalid_fields = []
     for field_name, field_data in validation_result.items():
         if isinstance(field_data, dict):
             status = field_data.get('status', '')
             if status != 'Đạt':
-                invalid_fields.append(f"{field_name}: {status}")
-                if 'details' in field_data:
-                    for detail in field_data['details']:
-                        invalid_fields.append(f"- {detail}")
+                if field_name == "Đối chiếu cơ sở dữ liệu":
+                    # Thêm từng lỗi đối chiếu CSDL vào invalid_fields
+                    for detail in field_data.get('details', []):
+                        invalid_fields.append(f"Đối chiếu cơ sở dữ liệu: {detail}")
+                else:
+                    invalid_fields.append(f"{field_name}: {status}")
+                    if 'details' in field_data:
+                        for detail in field_data['details']:
+                            invalid_fields.append(f"- {detail}")
         elif isinstance(field_data, list):
             for item in field_data:
                 if isinstance(item, dict):
@@ -613,9 +617,10 @@ async def step_verify_get(request: Request, db: Session = Depends(get_db)):
                                 invalid_fields.append(f"{field_name} - {sub_field}: {status}")
         elif field_data != 'Đạt':
             invalid_fields.append(f"{field_name}: {field_data}")
-    print("[DEBUG] invalid_fields mới nhất:", invalid_fields)
-    # Cập nhật lại vào file_info nếu cần
+
+    # Lưu lại validation_result và invalid_fields vào file_info
     if file_info is not None:
+        file_info["validation_result"] = validation_result
         file_info["invalid_fields"] = invalid_fields
 
     # Mapping các trường chính với trạng thái
@@ -706,7 +711,7 @@ async def step_verify_get(request: Request, db: Session = Depends(get_db)):
     # Xác định trạng thái tổng thể cho "Trích xuất thông tin"
     info_status = 'pass'
     for field in extracted_fields.values():
-        if field['status'] and field['status'] != 'Đạt' and field['status'] != '':
+        if field['status'] and field['status'] != 'Đạt':
             info_status = 'fail'
             break
 
@@ -777,7 +782,13 @@ async def step_verify_post(request: Request):
         })
     
     ket_qua = validate_ho_so_from_ocr(mapped_fields)
-    
+
+    # Nếu file_info có validation_result cũ với trường Đối chiếu cơ sở dữ liệu, gộp vào
+    if file_info and "validation_result" in file_info:
+        old_db_check = file_info["validation_result"].get("Đối chiếu cơ sở dữ liệu")
+        if old_db_check:
+            ket_qua["Đối chiếu cơ sở dữ liệu"] = old_db_check
+
     # Kiểm tra tất cả các trường đều hợp lệ
     is_full = True
     invalid_fields = []
@@ -794,10 +805,16 @@ async def step_verify_post(request: Request):
                     is_full = False
                     invalid_fields.append(f"{field_name}: {validation_result}")
         elif isinstance(validation_result, dict):
-            for sub_field, status in validation_result.items():
-                if status != 'Đạt':
-                    is_full = False
-                    invalid_fields.append(f"{field_name} - {sub_field}: {status}")
+            status = validation_result.get('status', '')
+            if status != 'Đạt':
+                is_full = False
+                if field_name == "Đối chiếu cơ sở dữ liệu":
+                    for detail in validation_result.get('details', []):
+                        invalid_fields.append(f"Đối chiếu cơ sở dữ liệu: {detail}")
+                else:
+                    invalid_fields.append(f"{field_name}: {status}")
+                    for detail in validation_result.get('details', []):
+                        invalid_fields.append(f"- {detail}")
         elif validation_result != 'Đạt':
             is_full = False
             invalid_fields.append(f"{field_name}: {validation_result}")
@@ -826,13 +843,52 @@ async def step_finalize_get(request: Request):
     print("[DEBUG] Fields for validation:", fields)
     is_full = file_info.get("is_full", False) if file_info else False
     invalid_fields = file_info.get("invalid_fields", []) if file_info else []
+    validation_result = file_info.get("validation_result", {}) if file_info else {}
+    # Lấy validation_result từ file_info
+    validation_result = file_info.get("validation_result", {}) if file_info else {}
+
+    # Tổng hợp invalid_fields duy nhất từ validation_result (KHÔNG lấy từ file_info)
+    invalid_fields = []
+    for field_name, field_data in validation_result.items():
+        if isinstance(field_data, dict):
+            status = field_data.get('status', '')
+            if status != 'Đạt':
+                if field_name == "Đối chiếu cơ sở dữ liệu":
+                    # Thêm từng lỗi đối chiếu CSDL vào invalid_fields
+                    for detail in field_data.get('details', []):
+                        invalid_fields.append(f"Đối chiếu cơ sở dữ liệu: {detail}")
+                else:
+                    invalid_fields.append(f"{field_name}: {status}")
+                    if 'details' in field_data:
+                        for detail in field_data['details']:
+                            invalid_fields.append(f"- {detail}")
+        elif isinstance(field_data, list):
+            for item in field_data:
+                if isinstance(item, dict):
+                    for sub_field, sub_data in item.items():
+                        if isinstance(sub_data, dict):
+                            status = sub_data.get('status', '')
+                            if status != 'Đạt':
+                                invalid_fields.append(f"{field_name} - {sub_field}: {status}")
+        elif field_data != 'Đạt':
+            invalid_fields.append(f"{field_name}: {field_data}")
+    # Bổ sung lỗi đối chiếu CSDL vào invalid_fields nếu có
+    db_check = validation_result.get("Đối chiếu cơ sở dữ liệu", {})
+    if db_check and db_check.get("status") != "Đạt":
+        for detail in db_check.get("details", []):
+            if f"Đối chiếu cơ sở dữ liệu: {detail}" not in invalid_fields:
+                invalid_fields.append(f"Đối chiếu cơ sở dữ liệu: {detail}")
+    # Lưu lại vào file_info
+    if file_info is not None:
+        file_info["validation_result"] = validation_result
+        file_info["invalid_fields"] = invalid_fields
+
     ma_ho_so = file_info.get("ma_ho_so") if file_info else None
     if not ma_ho_so:
         ma_ho_so = session.get("ma_ho_so")
     if not ma_ho_so:
         import random
         ma_ho_so = f"{random.randint(1, 999999):06d}"
-    validation_result = file_info.get("validation_result", {}) if file_info else {}
 
     # Lấy thành phần hồ sơ nộp từ procedure/case
     required_docs = []
@@ -881,6 +937,9 @@ async def step_finalize_get(request: Request):
             status = field_data.get('status', '')
             if status != 'Đạt':
                 invalid_fields.append(f"{field_name}: {status}")
+                if 'details' in field_data:
+                    for detail in field_data['details']:
+                        invalid_fields.append(f"- {detail}")
         elif isinstance(field_data, list):
             for item in field_data:
                 if isinstance(item, dict):
@@ -891,6 +950,11 @@ async def step_finalize_get(request: Request):
                                 invalid_fields.append(f"{field_name} - {sub_field}: {status}")
         elif field_data != 'Đạt':
             invalid_fields.append(f"{field_name}: {field_data}")
+    # --- Thêm lỗi đối chiếu cơ sở dữ liệu vào invalid_fields nếu có ---
+    db_check = validation_result.get("Đối chiếu cơ sở dữ liệu", {})
+    if db_check and db_check.get("status") != "Đạt":
+        for detail in db_check.get("details", []):
+            invalid_fields.append(f"Đối chiếu cơ sở dữ liệu: {detail}")
     print("[DEBUG] invalid_fields mới nhất:", invalid_fields)
     # Cập nhật lại vào file_info nếu cần
     if file_info is not None:
