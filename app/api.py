@@ -7,6 +7,7 @@ from datetime import datetime
 from app.processor.extractor import DocumentExtractor
 from app.data.procedures import get_procedure_list, get_procedure_cases, get_required_documents, get_procedure_details
 import os
+import time
 # from app.classify import model as yolo_model
 from app.processor.classifier import classify_document, model as yolo_model
 from app.processor.validator import validate_ho_so_from_ocr  
@@ -17,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.services.case_service import CaseService
 from app.middleware.session import SessionMiddleware
 from app.models import Case
+from app.services.citizen_service import CitizenService
 
 # Tạo FastAPI app
 app = FastAPI(title="Hệ thống Cơ sở dữ liệu thẩm tra, thẩm định")
@@ -69,6 +71,8 @@ def map_predicted_class_to_dropdown_value(predicted_class):
         return "giay_to_khac"
     mapping = {
         "ct01": "to_khai",
+        "ct01_2021": "to_khai",
+        "ct01_2023": "to_khai",
         "to_khai": "to_khai",
         "don": "don",
         "cccd": "cmnd",
@@ -133,6 +137,12 @@ def get_missing_documents(required_docs, uploaded_files_info):
         if not any(code.lower() in uploaded_codes for code in codes_to_check if code):
             missing_docs.append(req['name'])
     return missing_docs
+
+def print_timing(start_time, step_name):
+    end_time = time.time()
+    duration = end_time - start_time
+    print(f"[TIMING] {step_name}: {duration:.2f} seconds")
+    return end_time
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
@@ -244,15 +254,20 @@ async def step_upload_post(
 
         for file in files:
             if file.filename:
+                file_start_time = time.time()
                 file_path = os.path.join(upload_dir, file.filename)
                 with open(file_path, "wb") as buffer:
                     content = await file.read()
                     buffer.write(content)
+                
                 try:
                     # Extract text and structured data using OCR and LLM
+                    ocr_start_time = time.time()
                     text, data = document_extractor.extract_text(file_path)
+                    ocr_end_time = print_timing(ocr_start_time, "OCR Processing")
                     
                     # PHÂN LOẠI TỰ ĐỘNG
+                    classify_start_time = time.time()
                     ext = os.path.splitext(file.filename)[1][1:].lower()
                     predicted_class = None
                     confidence = None
@@ -267,10 +282,12 @@ async def step_upload_post(
                     else:
                         predicted_class = classify_document(text)
                         confidence = 1.0 if predicted_class != "khac" else 0.0
+                    classify_end_time = print_timing(classify_start_time, "Document Classification")
                     
                     dropdown_value = map_predicted_class_to_dropdown_value(predicted_class)
                     
                     # Parse structured text from LLM
+                    llm_start_time = time.time()
                     structured_data = {}
                     if text:
                         lines = text.split('\n')
@@ -337,6 +354,8 @@ async def step_upload_post(
                                     structured_data['family_members'].append(member_info)
                                     member_info = {}
                                     member_idx += 1
+                    llm_end_time = print_timing(llm_start_time, "LLM Processing")
+                    
                     is_declaration = (dropdown_value in ["to_khai", "ct04"])
                     file_info = {
                         "filename": file.filename,
@@ -354,6 +373,7 @@ async def step_upload_post(
                         "case_id": case_id
                     }
                     uploaded_files_info.append(file_info)
+                    file_end_time = print_timing(file_start_time, f"Total File Processing for {file.filename}")
                 except Exception as e:
                     print(f"Error processing file {file.filename}: {str(e)}")
                     continue
@@ -493,7 +513,8 @@ async def step_verify_get(request: Request, db: Session = Depends(get_db)):
             "fields": None,
             "error": "Chưa có tài liệu nào được upload hoặc trích xuất."
         })
-    file_info = next((f for f in uploaded_files_info if f.get("doc_class") in ["ct01", "to_khai", "ct04"]), None)
+    file_info = next(
+        (f for f in uploaded_files_info if f.get("doc_class") in ["ct01", "to_khai", "ct04", "ct01_2021", "ct01_2023"]), None)
     if not file_info:
         return templates.TemplateResponse("stepper/verify.html", {
             "request": request,
@@ -513,7 +534,7 @@ async def step_verify_get(request: Request, db: Session = Depends(get_db)):
     print("Số định danh cá nhân/CMND:", fields.get("Số định danh cá nhân/CMND", ""))
     print("Số điện thoại:", fields.get("Số điện thoại", ""))
     print("Email:", fields.get("Email", ""))
-    print("Họ và tên chủ hộ:", fields.get("Họ và tên chủ hộ", ""))
+    print("Họ, chữ đệm và tên chủ hộ:", fields.get("Họ và tên chủ hộ", ""))
     print("Mối quan hệ với chủ hộ:", fields.get("Mối quan hệ với chủ hộ", ""))
     print("Số định danh cá nhân của chủ hộ:", fields.get("Số định danh cá nhân của chủ hộ", ""))
     print("Nội dung đề nghị:", fields.get("Nội dung đề nghị", ""))
@@ -567,7 +588,6 @@ async def step_verify_get(request: Request, db: Session = Depends(get_db)):
     print('DEBUG validate_input:', validate_input)
 
     # Đối chiếu thông tin với database citizen
-    from app.services.citizen_service import CitizenService
     citizen_data = {
         "ho_ten": validate_input["Họ, chữ đệm và tên"],
         "ngay_sinh": validate_input["Ngày, tháng, năm sinh"],
@@ -751,7 +771,7 @@ async def step_verify_post(request: Request):
         })
     try:
         fields = json.loads(fields_json)
-        file_info = next((f for f in uploaded_files_info if f.get("doc_class") in ["ct01", "to_khai", "ct04"]), None)
+        file_info = next((f for f in uploaded_files_info if f.get("doc_class") in ["ct01", "to_khai", "ct04", "ct01_2021", "ct01_2023"]), None)
         fields_origin = file_info.get("fields", {}) if file_info else {}
         def get_field_value_safe(f, key, fallback=""):
             v = f.get(key, "")
@@ -832,11 +852,11 @@ async def step_verify_post(request: Request):
     return RedirectResponse(url="/finalize", status_code=303)
 
 @app.get("/finalize", response_class=HTMLResponse)
-async def step_finalize_get(request: Request):
+async def step_finalize_get(request: Request, db: Session = Depends(get_db)):
     session = request.state.session
     case_id_current = session.get("case_id_current")
     uploaded_files_info = session.get("uploaded_files_info", [])
-    file_info = next((f for f in uploaded_files_info if f.get("doc_class") in ["ct01", "to_khai", "ct04"]), None)
+    file_info = next((f for f in uploaded_files_info if f.get("doc_class") in ["ct01", "to_khai", "ct04", "ct01_2021", "ct01_2023"]), None)
     if not file_info and uploaded_files_info:
         file_info = uploaded_files_info[0]
     fields = file_info.get("fields", {}) if file_info else {}
@@ -960,6 +980,13 @@ async def step_finalize_get(request: Request):
     if file_info is not None:
         file_info["invalid_fields"] = invalid_fields
 
+    # --- Lấy thông tin công dân từ DB để điền vào CT04 ---
+    cccd = str(get_field_value(fields, "Số định danh cá nhân") or get_field_value(fields, "Số định danh cá nhân/CMND")).strip()
+    citizen = CitizenService.get_citizen_by_cccd(db, cccd) if cccd else None
+    noi_thuong_tru = getattr(citizen, "noi_thuong_tru", "...") if citizen else "..."
+    noi_tam_tru = getattr(citizen, "noi_tam_tru", "...") if citizen else "..."
+    noi_o_hien_tai = getattr(citizen, "noi_o_hien_tai", "...") if citizen else "..."
+
     # Chuẩn bị dữ liệu đầu vào cho LLM
     if fields:
         try:
@@ -980,6 +1007,9 @@ async def step_finalize_get(request: Request):
                 "Quan hệ với chủ hộ": str(get_field_value(fields, "Mối quan hệ với chủ hộ")).lower().strip(),
                 "Số định danh cá nhân của chủ hộ": str(get_field_value(fields, "Số định danh cá nhân của chủ hộ")).strip(),
                 "Nội dung đề nghị": str(get_field_value(fields, "Nội dung đề nghị")).strip(),
+                "Nơi thường trú": noi_thuong_tru,
+                "Nơi tạm trú": noi_tam_tru,
+                "Nơi ở hiện tại": noi_o_hien_tai,
                 "Thành viên thay đổi": [],
                 "thanh_phan_ho_so": [doc['name'] for doc in required_docs] if required_docs else [],
                 "ma_ho_so": ma_ho_so,
@@ -1087,6 +1117,7 @@ async def step_finalize_post(request: Request, db: Session = Depends(get_db)):
                 )
                 session["saved_case_id"] = case.id
                 print("[DEBUG] Successfully saved case:", case.id)
+
             except Exception as e:
                     print("[ERROR] Failed to save case:", str(e))
                     raise

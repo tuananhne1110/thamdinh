@@ -6,6 +6,8 @@ class Form_CT04_Prompt_Generator:
 - Dữ liệu thực tế bên dưới là một dict JSON, hãy sử dụng các trường tương ứng để điền vào biểu mẫu:
 {text}
 
+- Nếu dữ liệu đầu vào có trường "Nơi thường trú", "Nơi tạm trú", "Nơi ở hiện tại" thì điền đúng giá trị vào các mục tương ứng trong mẫu, thay cho dấu "...".
+
 Đây là mẫu HTML của biểu mẫu CT04 (bạn phải giữ nguyên cấu trúc, chỉ thay thế các trường thông tin):
 <p>Mẫu CT04&nbsp;ban h&agrave;nh k&egrave;m theo Th&ocirc;ng tư số 66/2023/TT-BCA</p>
 <p>&nbsp;ng&agrave;y 17/11/2023 của Bộ trưởng Bộ C&ocirc;ng an</p>
@@ -75,9 +77,9 @@ class Form_CT04_Prompt_Generator:
 </tr>
 </tbody>
 </table>
-<p>Nơi thường tr&uacute;:&nbsp;</p>
-<p>Nơi tạm tr&uacute;:&nbsp;</p>
-<p>Nơi ở hiện tại:&nbsp;</p>
+<p>Nơi thường trú: {noi_thuong_tru}</p>
+<p>Nơi tạm trú: {noi_tam_tru}</p>
+<p>Nơi ở hiện tại: {noi_o_hien_tai}</p>
 <p>Số điện thoại: &nbsp;Email:</p>
 <p>Nội dung y&ecirc;u cầu giải quyết:&nbsp;</p>
 <p>Th&agrave;nh phần hồ sơ nộp gồm:</p>
@@ -224,9 +226,7 @@ class Form_CT04_Prompt_Generator:
     - Tên người nộp: "Họ, chữ đệm và tên"
     - Số định danh cá nhân: "Số định danh cá nhân/CMND"
     - Khi điền số CMND, hãy điền mỗi chữ số vào một ô <td> riêng biệt trong bảng
-    - Nơi thường trú: Sử dụng "..." (vì không có trong CT01).
-    - Nơi tạm trú: Sử dụng "..." (vì không có trong CT01).
-    - Nơi ở hiện tại: Sử dụng "..." (vì không có trong CT01).
+    - Nếu dữ liệu đầu vào có trường "Nơi thường trú", "Nơi tạm trú", "Nơi ở hiện tại" thì điền đúng giá trị vào các mục tương ứng trong mẫu, thay cho dấu "...".
     - Số điện thoại: "Số điện thoại"
     - Email: "Email"
     - Nội dung yêu cầu giải quyết: "Nội dung đề nghị"
@@ -249,8 +249,14 @@ class Form_CT04_Prompt_Generator:
 Cung cấp biểu mẫu Mẫu CT04 đã điền hoàn chỉnh dưới dạng HTML, khớp chính xác với cấu trúc của biểu mẫu.
 """
 
-    def generate(self, text: str, ma_ho_so: str = "") -> str:
-        return self.template.format(text=text, ma_ho_so=ma_ho_so)
+    def generate(self, text: str, ma_ho_so: str = "", noi_thuong_tru: str = "...", noi_tam_tru: str = "...", noi_o_hien_tai: str = "...") -> str:
+        return self.template.format(
+            text=text,
+            ma_ho_so=ma_ho_so,
+            noi_thuong_tru=noi_thuong_tru,
+            noi_tam_tru=noi_tam_tru,
+            noi_o_hien_tai=noi_o_hien_tai
+        )
 
-    def __call__(self, text: str, ma_ho_so: str = "") -> str:
-        return self.generate(text, ma_ho_so) 
+    def __call__(self, text: str, ma_ho_so: str = "", noi_thuong_tru: str = "...", noi_tam_tru: str = "...", noi_o_hien_tai: str = "...") -> str:
+        return self.generate(text, ma_ho_so, noi_thuong_tru, noi_tam_tru, noi_o_hien_tai) 

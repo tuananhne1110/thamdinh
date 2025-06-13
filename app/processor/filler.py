@@ -71,7 +71,10 @@ class LLMFiller:
                 "giay_to_thieu": extracted_data.get("giay_to_thieu", []),
                 "ngay_lap_phieu": extracted_data.get("ngay_lap_phieu", ""),
                 "Ngày lập phiếu": extracted_data.get("Ngày lập phiếu", ""),
-                "ma_ho_so": extracted_data.get("ma_ho_so", "")
+                "ma_ho_so": extracted_data.get("ma_ho_so", ""),
+                "Nơi thường trú": extracted_data.get("Nơi thường trú", "..."),
+                "Nơi tạm trú": extracted_data.get("Nơi tạm trú", "..."),
+                "Nơi ở hiện tại": extracted_data.get("Nơi ở hiện tại", "...")
             }
 
             # Process family members if available
@@ -93,8 +96,16 @@ class LLMFiller:
                 prompt_generator = Form_CT04_Prompt_Generator()
 
             # Generate prompt text
-            if form_type == 'CT05' or form_type == 'CT04':
+            if form_type == 'CT05':
                 prompt_text = prompt_generator(json.dumps(prompt_data, ensure_ascii=False), ma_ho_so=prompt_data.get('ma_ho_so', ''))
+            elif form_type == 'CT04':
+                prompt_text = prompt_generator(
+                    json.dumps(prompt_data, ensure_ascii=False),
+                    ma_ho_so=prompt_data.get('ma_ho_so', ''),
+                    noi_thuong_tru=prompt_data.get('Nơi thường trú', '...'),
+                    noi_tam_tru=prompt_data.get('Nơi tạm trú', '...'),
+                    noi_o_hien_tai=prompt_data.get('Nơi ở hiện tại', '...')
+                )
             else:
                 prompt_text = prompt_generator(json.dumps(prompt_data, ensure_ascii=False))
 

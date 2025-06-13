@@ -201,18 +201,13 @@ class OCRPipeline:
         return text_table
 
     def ocr_ids(self):
-        ocr = PaddleOCR(
-            use_doc_orientation_classify=False,
-            use_doc_unwarping=False,
-            use_textline_orientation=False
-        )
         text_ids = ""
         for idx, filename in enumerate(self.file_cropped_ids):
             if idx == 0:
                 text_ids += "\n4. Số định danh cá nhân: "
             else:
                 text_ids += "\n9. Số định danh cá nhân của chủ hộ: "
-            ocr_result = ocr.predict(input=filename)
+            ocr_result = self.ocr_engine.predict(input=filename)
             for number in ocr_result[0]["rec_texts"]:
                 text_ids += number
         return text_ids
@@ -290,5 +285,10 @@ class DocumentExtractor:
             "fields": {},
             "metadata": {}
         }
+        # # Parse các trường từ text dạng "key: value"
+        # for line in text.split('\n'):
+        #     if ':' in line:
+        #         key, value = line.split(':', 1)
+        #         data["fields"][key.strip()] = value.strip()
         print("Structured Data:", data)
         return data
