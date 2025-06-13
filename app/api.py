@@ -30,6 +30,8 @@ app.add_middleware(SessionMiddleware)
 # Store middleware instance in app state
 app.state.session_middleware = session_middleware
 
+# Create uploads directory if it doesn't exist
+os.makedirs("uploads", exist_ok=True)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")

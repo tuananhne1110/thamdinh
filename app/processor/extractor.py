@@ -18,9 +18,16 @@ from .llm import LLMExtractor
 
 class OCRPipeline:
     def __init__(self):
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        self.processing_dir = os.path.join(current_dir, "processing")
+        # Create processing directory inside uploads directory
+        self.base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self.uploads_dir = os.path.join(self.base_dir, "uploads")
+        self.processing_dir = os.path.join(self.uploads_dir, "processing")
+        
+        # Create directories if they don't exist
+        os.makedirs(self.uploads_dir, exist_ok=True)
         os.makedirs(self.processing_dir, exist_ok=True)
+        
+        # Define file paths
         self.file_image = os.path.join(self.processing_dir, "image.png")
         self.file_without_table = os.path.join(self.processing_dir, "without_table.png")
         self.file_without_ids_table = os.path.join(self.processing_dir, "without_ids_table.png")
@@ -28,6 +35,8 @@ class OCRPipeline:
         self.file_contour_ids = os.path.join(self.processing_dir, "contour_ids.png")
         self.file_cropped_table = os.path.join(self.processing_dir, "cropped_table.png")
         self.file_cropped_ids = [os.path.join(self.processing_dir, f"cropped_id_{i}.png") for i in range(2)]
+        
+        # Initialize OCR engine
         self.ocr_engine = PaddleOCR(
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
@@ -35,21 +44,33 @@ class OCRPipeline:
         )
 
     def process_file(self, file_path: str) -> str:
-        ext = os.path.splitext(file_path)[1].lower()
-        images = []
-        if ext in ['.jpg', '.jpeg', '.png', '.bmp']:
-            images = [file_path]
-        elif ext == '.pdf':
-            images = self._pdf_to_images(file_path)
-        elif ext in ['.doc', '.docx']:
-            images = self._docx_to_images(file_path)
-        else:
-            raise ValueError(f"Unsupported file type: {ext}")
-        all_text = []
-        for img_path in images:
-            text = self._ocr_pipeline_on_image(img_path)
-            all_text.append(text)
-        return '\n'.join(all_text)
+        try:
+            # Ensure processing directory exists
+            os.makedirs(self.processing_dir, exist_ok=True)
+            
+            # Verify file exists
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(f"Input file not found: {file_path}")
+            
+            ext = os.path.splitext(file_path)[1].lower()
+            images = []
+            if ext in ['.jpg', '.jpeg', '.png', '.bmp']:
+                images = [file_path]
+            elif ext == '.pdf':
+                images = self._pdf_to_images(file_path)
+            elif ext in ['.doc', '.docx']:
+                images = self._docx_to_images(file_path)
+            else:
+                raise ValueError(f"Unsupported file type: {ext}")
+            
+            all_text = []
+            for img_path in images:
+                text = self._ocr_pipeline_on_image(img_path)
+                all_text.append(text)
+            return '\n'.join(all_text)
+        except Exception as e:
+            print(f"Error in process_file: {str(e)}")
+            raise
 
     def _pdf_to_images(self, pdf_path: str):
         from pdf2image import convert_from_path
