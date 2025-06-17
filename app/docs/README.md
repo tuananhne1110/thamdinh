@@ -13,7 +13,7 @@ Tự động hóa quy trình xử lý hồ sơ cư trú từ file giấy/tài li
 ## 2. Kiến trúc tổng thể
 
 ### 2.1 Sơ đồ kiến trúc
-
+QuyTrinh_DangKy_TamTru-Page-14.drawio (1).png
 
 ### 2.2 Các thành phần chính
 
