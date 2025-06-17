@@ -29,7 +29,7 @@ PROCEDURES = {
                         "alternatives": [
                             "don_ly_hon", "giay_gioi_thieu_1", "giay_gioi_thieu_2", "giay_gioi_thieu_3",
                             "giay_phep_xay_dung", "hd_cho_o_nho_nha", "hd_mua_ban_nha_1", "hd_mua_ban_nha_2",
-                            "nhuong_quyen_su_dung_dat", "ct01_2021", "ct01_2023", "xac_nhan_cu_tru_khi_ly_hon",
+                            "nhuong_quyen_su_dung_dat", "xac_nhan_cu_tru_khi_ly_hon",
                             "giay_gioi_thieu_1", "giay_gioi_thieu_2", "giay_gioi_thieu_3", "giay_phep_xay_dung",
                             "hd_cho_o_nho_nha", "nhuong_quyen_su_dung_dat"
                         ],
