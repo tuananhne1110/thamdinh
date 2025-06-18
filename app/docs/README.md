@@ -43,6 +43,16 @@ QuyTrinh_DangKy_TamTru-Page-14.drawio (1).png
     + Rule Engine: Áp dụng regex và rule để định dạng & validate dữ liệu
  - Output: Dữ liệu structured dạng JSON
 
+ - Ví dụ dữ liệu đầu ra của module Extraction: 
+      {
+      "ho_ten_nguoi_ke_khai": "Nguyễn Văn A",
+      "ngay_sinh": "01/01/1990",
+      "gioi_tinh": "Nam",
+      "so_dinh_danh": "123456789012",
+      "so_dien_thoai": "0901123123",
+      "email": "nguyenvana@gmail.com"
+      }
+
 ### 3.3 Validation Module
  - Kiểm tra:
     + Format Validator: Các trường số định danh, địa chỉ, ...
@@ -50,13 +60,22 @@ QuyTrinh_DangKy_TamTru-Page-14.drawio (1).png
     + Cross-Reference: So sánh dữ liệu trích xuất giữa các file trong hồ sơ
  - Output: JSON trạng thái từng trường + Tổng trạng thái hồ sơ
 
+ - Ví dụ dữ liệu Validation:
+      {
+      "ho_ten_nguoi_ke_khai": "Hợp lệ",
+      "ngay_sinh": "Hợp lệ",
+      "so_dinh_danh": "Hợp lệ",
+      "so_dien_thoai": "Không hợp lệ"
+      }
+
 ### 3.4 Database Check Module
  - So sánh với CSDL dân cư 
  - Xử lý
     + Database Service: Truy vấn CSDL
     + Match Service: So khớp thông tin 
  - Output: Log so sánh + kết quả xác thực
-
+ - Ví dụ output so khớp Database:
+ 
 ### 3.5 Form Generator Module
  - Xử lý
     + Template Engine: Chọn mẫu phù hợp (CT04/CT05)
@@ -111,4 +130,33 @@ QUAN_HE_HOP_LE_VOI_CHU_HO = {
 | **gioi_tinh**                     |string         | Nam/Nữ                                           |                              
 | **so_dinh_danh**                  |string         | CCCD/CMND (12 số)                                |                                         
 | **quan_he_voi_nguoi_co_thay_doi** |string         | Quan hệ với chủ hộ, thuộc QUAN_HE_HOP_PHAP       |              
+
+# 5 Bảng các API chính
+
+| Endpoint                   | Method | Chức năng                        | Đầu vào               | Đầu ra        |
+|----------------------------|--------|----------------------------------|-----------------------|---------------|
+|  /upload                   | POST   | Nhận hồ sơ, trích xuất dữ liệu   | file, thông tin hồ sơ |	JSON/status   |
+|  /process                  | POST   | So sánh checklist giấy tờ        | session, file info	 | checklist     |
+|  /verify                   | POST   | Thẩm định từng trường thông tin  | fields, DB	          | status        |
+|  /finalize                 | POST   | Sinh form CT04/CT05, lưu kết quả | fields, status	       | file + status |
+|  /api/required_documents   | GET    | Lấy danh mục giấy tờ cần nộp     | procedure, case	    | JSON giấy tờ  |
+|  /api/cases/{procedure_id} | GET    | Lấy danh sách case theo thủ tục  | procedure_id          | JSON          |
+|  /cases                    | GET    | Danh sách hồ sơ đã xử lý         |                       | HTML/JSON     |
+|  /cases/{case_id}          | GET    | Chi tiết từng hồ sơ, trạng thái  | case_id	             | HTML/JSON     |
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
