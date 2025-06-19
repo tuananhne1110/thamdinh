@@ -43,6 +43,8 @@ def validate_gioi_tinh(gioi_tinh: str) -> str:
 def validate_ngay_thang(date_str: str, fmt: str = "%d/%m/%Y") -> Tuple[bool, str]:
     if not date_str or date_str.strip() == "":
         return False, "Ngày sinh không được để trống"
+    # Loại bỏ mọi dấu cách thừa quanh dấu gạch chéo
+    date_str = date_str.replace(" ", "")
     try:
         datetime.strptime(date_str, fmt)
         return True, "Đạt"
@@ -60,6 +62,7 @@ def is_valid_email(email: str) -> bool:
 
 def tinh_tuoi(ngay_sinh: str) -> int:
     try:
+        ngay_sinh = ngay_sinh.replace(" ", "")  # Loại bỏ dấu cách thừa
         dob = datetime.strptime(ngay_sinh, "%d/%m/%Y")
         today = datetime.today()
         return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))

@@ -125,7 +125,7 @@ class CitizenService:
                 if isinstance(value, (datetime, date)):
                     return value.strftime("%d/%m/%Y")
                 if isinstance(value, str):
-                    s = value.strip()
+                    s = value.strip().replace(" ", "")  # Thêm .replace(" ", "") để loại bỏ dấu cách thừa
                     for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%Y/%m/%d"):
                         try:
                             dt = datetime.strptime(s, fmt)
@@ -160,14 +160,14 @@ class CitizenService:
             input_value = citizen_data.get(field, "")
             
             print(f"[DEBUG] Comparing {display_name}:")
-            print(f"[DEBUG] - Database value: {db_value}")
-            print(f"[DEBUG] - Input value: {input_value}")
+            print(f"[DEBUG] - Database value: {db_value} (type: {type(db_value)})")
+            print(f"[DEBUG] - Input value: {input_value} (type: {type(input_value)})")
             
             if db_value is not None and input_value:
                 normalized_db = normalize_value(db_value, field)
                 normalized_input = normalize_value(input_value, field)
-                print(f"[DEBUG] - Normalized DB value: {normalized_db}")
-                print(f"[DEBUG] - Normalized input value: {normalized_input}")
+                print(f"[DEBUG] - Normalized DB value: {normalized_db} (type: {type(normalized_db)})")
+                print(f"[DEBUG] - Normalized input value: {normalized_input} (type: {type(normalized_input)})")
                 
                 if normalized_db != normalized_input:
                     print(f"[DEBUG] - Mismatch found for {display_name}")

@@ -13,7 +13,7 @@ def classify_document(text):
 
 
 try:
-    model = YOLO(r'app\models\best.pt')
+    model = YOLO(r'app/models/best.pt')
     print("Model loaded successfully!")
     print("Model classes:", model.names)
 except Exception as e:
