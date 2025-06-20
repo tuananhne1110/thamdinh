@@ -15,6 +15,23 @@ from docx.text.paragraph import Paragraph
 from PyPDF2 import PdfReader
 import tempfile
 from .llm import LLMExtractor
+from concurrent.futures import ThreadPoolExecutor
+import logging
+import paddle
+import time
+
+# Set up logging (change level to logging.INFO or WARNING in production)
+logging.basicConfig(level=logging.WARNING)
+logger = logging.getLogger(__name__)
+
+def profile_time(func):
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        elapsed = time.time() - start
+        print(f"[PROFILE] {func.__qualname__} took {elapsed:.3f}s")
+        return result
+    return wrapper
 
 class OCRPipeline:
     def __init__(self):
@@ -37,12 +54,17 @@ class OCRPipeline:
         self.file_cropped_ids = [os.path.join(self.processing_dir, f"cropped_id_{i}.png") for i in range(2)]
         
         # Initialize OCR engine
+        # PaddleOCR 3.x: KHÔNG truyền use_gpu vào constructor
         self.ocr_engine = PaddleOCR(
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
-            use_textline_orientation=False
+            use_textline_orientation=False,
+            lang='vi'
         )
+        # Log thiết bị Paddle đang sử dụng
+        logger.warning(f"[Paddle] Using device: {paddle.get_device()}")
 
+    @profile_time
     def process_file(self, file_path: str) -> str:
         try:
             # Ensure processing directory exists
@@ -63,18 +85,18 @@ class OCRPipeline:
             else:
                 raise ValueError(f"Unsupported file type: {ext}")
             
-            all_text = []
-            for img_path in images:
-                text = self._ocr_pipeline_on_image(img_path)
-                all_text.append(text)
+            # Song song hóa OCR nhiều ảnh/trang
+            with ThreadPoolExecutor() as executor:
+                all_text = list(executor.map(self._ocr_pipeline_on_image, images))
             return '\n'.join(all_text)
         except Exception as e:
-            print(f"Error in process_file: {str(e)}")
+            logger.error(f"Error in process_file: {str(e)}")
             raise
 
+    @profile_time
     def _pdf_to_images(self, pdf_path: str):
         from pdf2image import convert_from_path
-        pil_images = convert_from_path(pdf_path, dpi=400)
+        pil_images = convert_from_path(pdf_path, dpi=200)  # Giảm DPI để tăng tốc
         image_paths = []
         for idx, img in enumerate(pil_images):
             out_path = os.path.join(self.processing_dir, f"pdf_page_{idx}.png")
@@ -82,6 +104,7 @@ class OCRPipeline:
             image_paths.append(out_path)
         return image_paths
 
+    @profile_time
     def _docx_to_images(self, docx_path: str):
         # Chuyển docx thành text, render text ra ảnh trắng đen đơn giản (tạm thời)
         # Nếu muốn đẹp hơn thì dùng giải pháp render docx->pdf->image
@@ -98,6 +121,7 @@ class OCRPipeline:
         img.save(out_path)
         return [out_path]
 
+    @profile_time
     def _ocr_pipeline_on_image(self, image_path: str) -> str:
         # Áp dụng pipeline crop_table, crop_ids, ocr_without_ids_table, ocr_ids, ocr_table
         self.crop_table(image_path)
@@ -108,8 +132,10 @@ class OCRPipeline:
         return text_ids + "\n" + text_body + "\n" + text_table
 
     # Các hàm crop_table, crop_ids, ocr_without_ids_table, ocr_ids, ocr_table, merge_boxes_line_by_line, boxes_to_rect, merge_rects_in_line, merge_group giữ nguyên như ocr.py
+    @profile_time
     def crop_table(self, filename):
         img = cv2.imread(filename)
+        img = self._resize_image_if_needed(img)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         blur = cv2.GaussianBlur(gray, (5, 5), 0)
         thresh = cv2.adaptiveThreshold(
@@ -117,7 +143,6 @@ class OCRPipeline:
             cv2.ADAPTIVE_THRESH_MEAN_C,
             cv2.THRESH_BINARY_INV, 11, 2
         )
-        cv2.imwrite(self.file_image, img)
         kernel_h = cv2.getStructuringElement(cv2.MORPH_RECT, (40, 1))
         kernel_v = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 40))
         horizontal_lines = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_h, iterations=2)
@@ -128,11 +153,9 @@ class OCRPipeline:
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
             if w > 50 and h > 50:
-                image_with_contours = img.copy()
-                cv2.rectangle(image_with_contours, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                cv2.imwrite(self.file_contour_table, image_with_contours)
                 table_roi = img[y:y + h, x:x + w]
-                cv2.imwrite(self.file_cropped_table, table_roi)
+                # Ghi file cho PaddleOCR predict table
+                self.cropped_table_path = self._write_temp_image(table_roi, 'cropped_table.png')
                 mask = np.zeros(img.shape[:2], dtype=np.uint8)
                 cv2.drawContours(mask, [contour], -1, color=255, thickness=cv2.FILLED)
                 img_without_table = cv2.inpaint(img, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
@@ -140,15 +163,16 @@ class OCRPipeline:
                 height, _ = gray.shape
                 mask_bottom[y + h :, :] = 25
                 inpainted = cv2.inpaint(img_without_table, mask_bottom, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
-                cv2.imwrite(self.file_without_table, inpainted)
+                self.img_without_table = inpainted
                 found = True
                 break
         if not found:
-            # Nếu không tìm thấy bảng, copy ảnh gốc sang without_table.png
-            cv2.imwrite(self.file_without_table, img)
+            self.img_without_table = img
+            self.cropped_table_path = None
 
+    @profile_time
     def crop_ids(self):
-        img = cv2.imread(self.file_without_table)
+        img = self.img_without_table
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         bin_img = cv2.adaptiveThreshold(~gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 15, -2)
         horizontal = bin_img.copy()
@@ -172,7 +196,7 @@ class OCRPipeline:
             dy_pairs.append((dy, box1, box2))
         dy_pairs = sorted(dy_pairs, key=lambda x: x[0])
         top_2_pairs = dy_pairs[:2]
-        cropped_images = []
+        self.cropped_ids_paths = []
         found = False
         for idx, (_, b1, b2) in enumerate(top_2_pairs):
             x1 = min(b1[0], b2[0])
@@ -180,29 +204,31 @@ class OCRPipeline:
             y1 = min(b1[1], b2[1])
             y2 = max(b1[1] + b1[3], b2[1] + b2[3])
             cropped = img[y1:y2, x1:x2]
-            cropped_images.append(cropped)
-            cv2.imwrite(self.file_cropped_ids[idx], cropped)
+            # Ghi file cho PaddleOCR predict số định danh
+            path = self._write_temp_image(cropped, f'cropped_id_{idx}.png')
+            self.cropped_ids_paths.append(path)
             img[y1:y2, x1:x2] = 255
             found = True
-        if not found:
-            # Nếu không tìm thấy vùng số định danh, copy ảnh without_table sang without_ids_table
-            cv2.imwrite(self.file_without_ids_table, img)
-        else:
-            cv2.imwrite(self.file_without_ids_table, img)
+        self.img_without_ids_table = img
 
+    @profile_time
     def ocr_without_ids_table(self):
-        img = cv2.imread(self.file_without_ids_table)
+        img = self.img_without_ids_table
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         text = pytesseract.image_to_string(
-        gray,
-        lang="vie",
-        config="--oem 3 --psm 6 -l vie textord_heavy_nr=1"
+            gray,
+            lang="vie",
+            config="--oem 3 --psm 6 -l vie textord_heavy_nr=1"
         )
         return text
 
+    @profile_time
     def ocr_table(self):
-        img = cv2.imread(self.file_cropped_table)
-        ocr_result = self.ocr_engine.predict(input=self.file_cropped_table)
+        path = getattr(self, 'cropped_table_path', None)
+        if path is None:
+            return ''
+        ocr_result = self.ocr_engine.predict(input=path)
+        img = cv2.imread(path)
         boxes = ocr_result[0]["rec_polys"]
         merged_boxes = self.merge_boxes_line_by_line(boxes)
         cropped_images = []
@@ -221,14 +247,15 @@ class OCRPipeline:
             text_table += "\n" + text_cell.strip()
         return text_table
 
+    @profile_time
     def ocr_ids(self):
         text_ids = ""
-        for idx, filename in enumerate(self.file_cropped_ids):
+        for idx, path in enumerate(getattr(self, 'cropped_ids_paths', [])):
             if idx == 0:
                 text_ids += "\n4. Số định danh cá nhân: "
             else:
                 text_ids += "\n9. Số định danh cá nhân của chủ hộ: "
-            ocr_result = self.ocr_engine.predict(input=filename)
+            ocr_result = self.ocr_engine.predict(input=path)
             for number in ocr_result[0]["rec_texts"]:
                 text_ids += number
         return text_ids
@@ -284,20 +311,32 @@ class OCRPipeline:
         y2 = max(r[3] for r in group)
         return [x1, y1, x2, y2]
 
+    def _resize_image_if_needed(self, img, max_side=2000):
+        h, w = img.shape[:2]
+        if max(h, w) > max_side:
+            scale = max_side / max(h, w)
+            img = cv2.resize(img, (int(w * scale), int(h * scale)))
+        return img
+
+    def _write_temp_image(self, img, filename):
+        # Ghi file vào thư mục processing (có thể dùng tempfile nếu muốn tự động xóa)
+        path = os.path.join(self.processing_dir, filename)
+        cv2.imwrite(path, img)
+        return path
+
 class DocumentExtractor:
     def __init__(self):
         self.ocr_pipeline = OCRPipeline()
         self.llm_extractor = LLMExtractor()
 
-    def extract_text(self, file_path: str) -> Tuple[str, Dict]:
+    def extract_text(self, file_path: str, use_llm: bool = True) -> Tuple[str, Dict]:
         text = self.ocr_pipeline.process_file(file_path)
-        print('==== OCR TEXT ====')
-        print(text)
-        # Sau khi có text, vẫn truyền vào LLM/phân tích fields như cũ
-        structured_text = self.llm_extractor(text)
-        print('==== LLM STRUCTURED TEXT ====')
-        print(structured_text)
-        data = self._analyze_structure(structured_text)
+        if use_llm:
+            structured_text = self.llm_extractor(text)
+            data = self._analyze_structure(structured_text)
+        else:
+            structured_text = text
+            data = {}
         return structured_text, data
 
     def _analyze_structure(self, text: str) -> Dict:

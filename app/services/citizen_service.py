@@ -125,7 +125,7 @@ class CitizenService:
                 if isinstance(value, (datetime, date)):
                     return value.strftime("%d/%m/%Y")
                 if isinstance(value, str):
-                    s = value.strip().replace(" ", "")  # Thêm .replace(" ", "") để loại bỏ dấu cách thừa
+                    s = value.strip().replace(" ", "")  # Loại bỏ mọi dấu cách thừa
                     for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%Y/%m/%d"):
                         try:
                             dt = datetime.strptime(s, fmt)
